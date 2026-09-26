@@ -502,9 +502,28 @@ Para quem quer conferir antes de confiar:
 
 ```
 cofre-senhas/
-├── main.py        # o app inteiro (CLI com argparse)
-├── cofre          # atalho de shell (Linux/macOS)
-├── README.md      # este guia
-├── pyproject.toml # dependências
-└── uv.lock        # versões travadas
+├── main.py                 # o app inteiro (CLI com argparse)
+├── cofre                   # atalho de shell (Linux/macOS)
+├── README.md               # este guia
+├── pyproject.toml          # dependências
+├── uv.lock                 # versões travadas
+├── tests/test_cofre.py     # suíte de testes (pytest)
+└── .github/workflows/ci.yml# CI: roda os testes em Linux, Windows e macOS
 ```
+
+## Testes e integração contínua
+
+```bash
+uv sync          # instala também o pytest (grupo de desenvolvimento)
+uv run pytest -q
+```
+
+Os testes cobrem o fluxo completo: criação do cofre, senha mestra errada,
+adicionar/ver/listar/apagar, gerador de senhas, troca de senha mestra e a
+importação de CSV (Chrome, Firefox, separador `;`, dry-run, reimportação).
+Cada teste roda o `main.py` como subprocesso, com o cofre em pasta temporária —
+ou seja, exatamente o caminho que o usuário usa.
+
+A **GitHub Actions** (`.github/workflows/ci.yml`) roda essa suíte em **Linux,
+Windows e macOS** a cada push na `main` e a cada pull request. Um PR só deve
+ser mesclado com a CI verde.

@@ -375,8 +375,7 @@ def cmd_gen(args) -> None:
     if args.add:
         args.password = pw
         cmd_add(args)
-    else:
-        print(pw)
+    print(pw)
 
 
 def cmd_passwd(_args) -> None:
@@ -480,6 +479,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # garante UTF-8 na saída em qualquer SO (no Windows o padrão é cp1252 e
+    # caracteres como ⚠ ou acentos quebrariam a impressão)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
     args = build_parser().parse_args()
     if args.cmd == "gen" and args.add:
         args.name = args.add

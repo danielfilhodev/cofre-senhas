@@ -308,18 +308,20 @@ def test_copy_detecta_ferramentas_por_sistema(monkeypatch):
         return lambda nome: nome if nome in permitidos else None
 
     # Windows: clip + powershell
+    monkeypatch.setattr(mod.sys, "platform", "win32")
     monkeypatch.setattr(mod.os, "name", "nt")
     monkeypatch.setattr(mod.shutil, "which", fake("clip", "powershell"))
     assert mod._clip_cmd() == (["clip"], ["powershell", "-NoProfile", "-Command", "Get-Clipboard"])
 
     # macOS: pbcopy/pbpaste nativos
-    monkeypatch.setattr(mod.os, "name", "posix")
     monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod.os, "name", "posix")
     monkeypatch.setattr(mod.shutil, "which", fake("pbcopy", "pbpaste"))
     assert mod._clip_cmd() == (["pbcopy"], ["pbpaste"])
 
     # Linux Wayland
     monkeypatch.setattr(mod.sys, "platform", "linux")
+    monkeypatch.setattr(mod.os, "name", "posix")
     monkeypatch.setattr(mod.shutil, "which", fake("wl-copy", "wl-paste"))
     assert mod._clip_cmd() == (["wl-copy"], ["wl-paste", "--no-newline"])
 

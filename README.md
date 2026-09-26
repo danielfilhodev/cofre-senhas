@@ -600,3 +600,11 @@ A **GitHub Actions** (`.github/workflows/ci.yml`) tem dois jobs em **Linux,
 Windows e macOS** a cada push na `main` e a cada pull request: o de CLI (uv) e
 o de UI (Python do `actions/setup-python`, que vem com `tkinter`; no Linux sob
 `xvfb`). Um PR só deve ser mesclado com a CI verde.
+
+---
+
+## Licença
+
+Este projeto está sob a [licença MIT](LICENSE) — você pode usar, copiar, modificar
+e distribuir (inclusive comercialmente), desde que o aviso de copyright seja
+mantido.

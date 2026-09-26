@@ -270,3 +270,80 @@ def test_sem_cofre_erro_amigavel(tmp_path: Path):
     p = run(["list"], vault=tmp_path / "nao-existe", stdin=f"{MASTER}\n")
     assert p.returncode == 1
     assert "init" in p.stderr
+
+
+# ----------------------------------------------------------------- --copy
+def load_main():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("cofre_main", MAIN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_copy_e_raw_nao_combinam(vault: Path):
+    add(vault, "gmail", "senha-x")
+    p = run(["get", "gmail", "--copy", "--raw"], vault=vault, stdin=f"{MASTER}\n")
+    assert p.returncode == 1
+    assert "não combinam" in p.stderr
+
+
+def test_copy_sem_ferramenta_erro_amigavel(monkeypatch):
+    mod = load_main()
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    monkeypatch.setattr(mod.shutil, "which", lambda nome: None)
+    assert mod._clip_cmd() is None
+    erro = mod._para_area_transferencia("qualquer")
+    assert erro is not None
+    assert "área de transferência" in erro
+    assert "xclip" in erro  # diz o que instalar
+
+
+def test_copy_detecta_ferramentas_por_sistema(monkeypatch):
+    mod = load_main()
+
+    def fake(*permitidos):
+        permitidos = set(permitidos)
+        return lambda nome: nome if nome in permitidos else None
+
+    # Windows: clip + powershell
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    monkeypatch.setattr(mod.os, "name", "nt")
+    monkeypatch.setattr(mod.shutil, "which", fake("clip", "powershell"))
+    assert mod._clip_cmd() == (["clip"], ["powershell", "-NoProfile", "-Command", "Get-Clipboard"])
+
+    # macOS: pbcopy/pbpaste nativos
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod.os, "name", "posix")
+    monkeypatch.setattr(mod.shutil, "which", fake("pbcopy", "pbpaste"))
+    assert mod._clip_cmd() == (["pbcopy"], ["pbpaste"])
+
+    # Linux Wayland
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    monkeypatch.setattr(mod.os, "name", "posix")
+    monkeypatch.setattr(mod.shutil, "which", fake("wl-copy", "wl-paste"))
+    assert mod._clip_cmd() == (["wl-copy"], ["wl-paste", "--no-newline"])
+
+    # Linux X11 com xclip
+    monkeypatch.setattr(mod.shutil, "which", fake("xclip"))
+    assert mod._clip_cmd() == (
+        ["xclip", "-selection", "clipboard"],
+        ["xclip", "-selection", "clipboard", "-o"],
+    )
+
+    # nada instalado
+    monkeypatch.setattr(mod.shutil, "which", fake())
+    assert mod._clip_cmd() is None
+
+
+def test_get_copy_comportamento(vault: Path):
+    """Sucesso (há clipboard) ou falha amigável — nunca exceção ou senha na tela."""
+    add(vault, "gmail", "senha-copiar-123")
+    p = run(["get", "gmail", "--copy", "--timeout", "1"], vault=vault, stdin=f"{MASTER}\n")
+    assert "senha-copiar-123" not in p.stdout
+    if p.returncode == 0:
+        assert "copiada" in p.stdout
+    else:
+        assert p.returncode == 1
+        assert "área de transferência" in p.stderr

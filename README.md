@@ -251,6 +251,7 @@ as mesmas** — só muda o "trinco" do cofre.
 | `add <nome>` | guarda/atualiza uma entrada | `uv run main.py add gmail -u joao@gmail.com` |
 | `get <nome>` | mostra uma entrada inteira | `uv run main.py get gmail` |
 | `get <nome> --raw` | mostra **só** a senha (para colar num script) | `uv run main.py get gmail --raw` |
+| `get <nome> --copy` | copia a senha p/ colar e **limpa sozinha em 30 s** | `uv run main.py get gmail --copy` |
 | `list` | lista os nomes guardados (nunca mostra senhas) | `uv run main.py list` |
 | `del <nome>` | apaga uma entrada (pede confirmação) | `uv run main.py del banco -y` |
 | `import <arquivo>` | importa um CSV do navegador/gerenciador | `uv run main.py import senhas.csv` |
@@ -266,6 +267,14 @@ as mesmas** — só muda o "trinco" do cofre.
 | `--url` | endereço do site |
 | `-n`, `--notes` | anotações livres (ex.: "pergunta secreta: nome do gato") |
 | `-p`, `--password` | passa a senha por argumento — **evite**, fica no histórico do terminal |
+
+**Opções do `get`:**
+
+| Opção | Significado |
+|---|---|
+| `--raw` | imprime só a senha, sem rótulos (para scripts) |
+| `--copy` | cola na área de transferência e **não imprime** a senha na tela |
+| `--timeout SEG` | quantos segundos até limpar a área de transferência (padrão 30, `0` = não limpar) |
 
 **Opções do `import`:**
 
@@ -406,6 +415,7 @@ para alguém que roubar um dos dois.
 | `command not found: uv` / `'uv' não é reconhecido` | uv não instalado, ou terminal aberto antes da instalação | feche e abra o terminal de novo, ou use o [método sem uv](#método-alternativo-sem-uv) |
 | `No module named 'cryptography'` | dependência não instalada | rode `uv sync` (ou `pip install cryptography` no venv) |
 | `permission denied` ao salvar | falta de permissão na pasta | rode **sem** `sudo`; confira as permissões de `~/.cofre_senhas` |
+| `não consegui acessar a área de transferência` | Linux sem ferramenta de clipboard | `sudo apt install xclip` (ou `wl-clipboard` no Wayland); Windows e macOS já têm nativo |
 | Digitei a senha e nada apareceu | normal: a senha digitada não é exibida | termine de digitar e aperte **Enter** |
 
 **Importante:** não existe recuperação de senha mestra. Se esquecer, o conteúdo antigo
@@ -451,9 +461,11 @@ Pode. O campo `--notes` aceita qualquer texto, e o valor guardado é só uma str
 Cada um deve ter seu próprio usuário no sistema. O cofre fica dentro do diretório
 pessoal de quem criou.
 
-**Como copio a senha sem ela aparecer na listagem?**
-`uv run main.py get gmail --raw` imprime só a senha — útil para encadear comandos,
-mas quem estiver olhando a tela ainda vê.
+**Como colo a senha no site sem ela aparecer na tela?**
+`uv run main.py get gmail --copy` — a senha vai para a área de transferência sem ser
+imprimida e é apagada automaticamente em 30 segundos (dá pra mudar com `--timeout`).
+É só abrir o site e dar Ctrl+V. O `--raw` também existe, mas imprime na tela: quem
+estiver por perto vê.
 
 ---
 
@@ -466,13 +478,14 @@ mas quem estiver olhando a tela ainda vê.
 3. **Faça backup do arquivo** `vault.json` — mas só junto com o papel da senha mestra.
 4. **Apague o CSV exportado do navegador** logo depois do `import` — ele tem suas
    senhas em texto puro.
-5. **Não use `-p` para digitar senhas** no terminal: fica gravado no histórico.
+5. **Para logar num site, use `get <nome> --copy`** — a senha vai direto para a área de transferência (nunca aparece na tela nem no histórico) e some daí a 30 s. Depois é só Ctrl+V.
+6. **Não use `-p` para digitar senhas** no terminal: fica gravado no histórico.
    Deixe o programa pedir.
-6. **Bloqueie a tela do computador** quando sair do lugar (no Windows: `Win+L`;
+7. **Bloqueie a tela do computador** quando sair do lugar (no Windows: `Win+L`;
    no macOS: `Ctrl+Cmd+Q`; no Linux: atalho do seu ambiente). Enquanto um terminal
    mostra a saída de um comando, quem estiver na frente vê.
-7. **Não fotografe a tela** com senhas abertas nem mande prints para ninguém.
-8. **Troque a senha mestra** de vez em quando com `passwd`.
+8. **Não fotografe a tela** com senhas abertas nem mande prints para ninguém.
+9. **Troque a senha mestra** de vez em quando com `passwd`.
 
 ---
 

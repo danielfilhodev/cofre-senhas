@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Cofre de senhas local e criptografado.
+"""Cofre de senhas local e criptografado — nada sai do seu computador.
 
-Uso:
-    python main.py init              # cria o cofre (define a senha mestra)
-    python main.py add <nome>        # adiciona/atualiza uma entrada
-    python main.py get <nome>        # mostra uma entrada
-    python main.py list              # lista os nomes salvos
-    python main.py del <nome>        # remove uma entrada
-    python main.py gen               # gera uma senha forte
-    python main.py passwd            # muda a senha mestra
+Comandos (todos com --help próprio):
+    cofre init      cria o cofre e define a senha mestra (uma única vez)
+    cofre add <nome>      guarda/atualiza uma entrada
+    cofre get <nome>      mostra uma entrada (--raw = só a senha)
+    cofre list            lista os nomes guardados (nunca mostra senhas)
+    cofre del <nome>      apaga uma entrada (pede confirmação)
+    cofre gen             gera uma senha forte (--add <nome> já salva)
+    cofre passwd          troca a senha mestra
 
-O cofre fica em ~/.cofre_senhas/vault.json (criptografado com Fernet,
-chave derivada da senha mestra via PBKDF2-HMAC-SHA256).
+Sem o atalho `cofre`, use:  python3 main.py <comando>
+Arquivo do cofre: ~/.cofre_senhas/vault.json (chave derivada da senha
+mestra com PBKDF2-HMAC-SHA256, dados cifrados com Fernet).
+Guia completo para iniciantes: README.md
 """
 
 from __future__ import annotations
@@ -222,40 +224,76 @@ def cmd_passwd(_args) -> None:
 
 
 # --------------------------------------------------------------------- main
+_EXEMPLOS = """\
+exemplos:
+  cofre init                       cria o cofre (rode só uma vez)
+  cofre add gmail -u joao@gmail.com   salva o acesso do e-mail
+  cofre add banco                   pede a senha sem mostrar na tela
+  cofre list                        mostra o que está guardado
+  cofre get gmail                   mostra os dados de uma entrada
+  cofre gen --add netflix           gera senha forte e já salva
+  cofre passwd                      troca a senha mestra
+
+esqueceu alguma coisa?  cofre <comando> --help
+"""
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="cofre", description="Cofre de senhas local e criptografado")
+    from argparse import RawDescriptionHelpFormatter
+
+    p = argparse.ArgumentParser(
+        prog="cofre",
+        description="Cofre de senhas local e criptografado — nada sai do seu computador.",
+        epilog=_EXEMPLOS,
+        formatter_class=RawDescriptionHelpFormatter,
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("init", help="cria o cofre").set_defaults(func=cmd_init)
+    sub.add_parser(
+        "init",
+        help="cria o cofre e define a senha mestra (rode uma única vez)",
+        description="Cria o arquivo do cofre e pede para você definir a senha mestra.",
+    ).set_defaults(func=cmd_init)
 
-    add = sub.add_parser("add", help="adiciona/atualiza uma entrada")
-    add.add_argument("name")
-    add.add_argument("-u", "--username")
-    add.add_argument("-p", "--password", help="caso contrário, é pedido no terminal")
-    add.add_argument("--url")
-    add.add_argument("-n", "--notes")
+    add = sub.add_parser(
+        "add",
+        help="guarda uma senha nova (ou atualiza uma existente)",
+        description="Guarda uma entrada no cofre. Se o nome já existir, atualiza.",
+    )
+    add.add_argument("name", metavar="nome", help="apelido da entrada, ex.: gmail, banco, netflix")
+    add.add_argument("-u", "--username", metavar="USUARIO", help="seu usuário/e-mail no site")
+    add.add_argument(
+        "-p", "--password", metavar="SENHA",
+        help="a senha; se omitir, o programa pede sem exibir (mais seguro)",
+    )
+    add.add_argument("--url", metavar="URL", help="endereço do site, ex.: https://gmail.com")
+    add.add_argument("-n", "--notes", metavar="NOTA", help="anotações livres (opcional)")
     add.set_defaults(func=cmd_add)
 
-    get = sub.add_parser("get", help="mostra uma entrada")
-    get.add_argument("name")
-    get.add_argument("--raw", action="store_true", help="só a senha (para scripts)")
+    get = sub.add_parser("get", help="mostra os dados de uma entrada", description="Desbloqueia o cofre e mostra uma entrada.")
+    get.add_argument("name", metavar="nome", help="apelido da entrada, ex.: gmail")
+    get.add_argument("--raw", action="store_true", help="imprime só a senha, sem rótulos (para uso em scripts)")
     get.set_defaults(func=cmd_get)
 
-    lst = sub.add_parser("list", help="lista as entradas")
+    lst = sub.add_parser("list", help="lista os nomes guardados", description="Mostra os nomes das entradas (nunca as senhas).")
     lst.set_defaults(func=cmd_list)
 
-    d = sub.add_parser("del", help="remove uma entrada")
-    d.add_argument("name")
-    d.add_argument("-y", "--yes", action="store_true")
+    d = sub.add_parser("del", help="apaga uma entrada", description="Remove uma entrada do cofre; pede confirmação.")
+    d.add_argument("name", metavar="nome", help="apelido da entrada, ex.: banco")
+    d.add_argument("-y", "--yes", action="store_true", help="não perguntar nada (apaga direto)")
     d.set_defaults(func=cmd_del)
 
-    g = sub.add_parser("gen", help="gera uma senha forte")
-    g.add_argument("-l", "--length", type=int, default=20)
-    g.add_argument("--no-symbols", dest="symbols", action="store_false")
-    g.add_argument("--add", metavar="NOME", help="gera e salva já no cofre")
+    g = sub.add_parser("gen", help="gera uma senha forte e aleatória", description="Sorteia uma senha difícil de adivinhar.")
+    g.add_argument("-l", "--length", type=int, default=20, metavar="N", help="tamanho da senha (padrão: 20)")
+    g.add_argument("--no-symbols", dest="symbols", action="store_false", help="sem símbolos especiais (!@#...)")
+    g.add_argument("--add", metavar="nome", help="gera e já salva no cofre com esse nome")
     g.set_defaults(func=cmd_gen, add=None, username=None, url=None, notes=None, password=None)
 
-    sub.add_parser("passwd", help="muda a senha mestra").set_defaults(func=cmd_passwd)
+    sub.add_parser(
+        "passwd",
+        help="troca a senha mestra (recriptografa tudo)",
+        description="Define uma nova senha mestra. As senhas guardadas continuam as mesmas.",
+    ).set_defaults(func=cmd_passwd)
     return p
 
 

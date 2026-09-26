@@ -72,6 +72,13 @@ def app(tmp_path, monkeypatch):
         pass
 
 
+def _linhas_visiveis(janela) -> list[str]:
+    """Linhas empacotadas na lista — as filtradas ficam ocultas, não destruídas."""
+    janela.update()
+    return [w.cget("text").split("\n")[0]
+            for w in janela.lista.winfo_children() if w.winfo_ismapped()]
+
+
 def test_tela_de_login(app):
     janela, *_ = app
     assert janela.login_view.winfo_ismapped()
@@ -86,7 +93,7 @@ def test_destrava_e_lista_as_entradas(app):
     janela.atualizar_lista()
     janela.update()
 
-    linhas = [w.cget("text").split("\n")[0] for w in janela.lista.winfo_children()]
+    linhas = _linhas_visiveis(janela)
     assert linhas == ["GitHub", "Google", "mistral"]  # ordem alfabética
     assert "3 entrada(s)" in janela.lbl_total.cget("text")
 
@@ -115,9 +122,31 @@ def test_busca_filtra_a_lista(app):
     janela.atualizar_lista()
     janela.entry_busca.insert(0, "goog")
     janela.atualizar_lista()
-    linhas = [w.cget("text").split("\n")[0] for w in janela.lista.winfo_children()]
-    assert linhas == ["Google"]
+    assert _linhas_visiveis(janela) == ["Google"]
+
+    # limpar a busca devolve a lista completa, na ordem
     janela.entry_busca.delete(0, "end")
+    janela.atualizar_lista()
+    assert _linhas_visiveis(janela) == ["GitHub", "Google", "mistral"]
+
+
+def test_linha_atualiza_apos_edicao(app):
+    """A lista não é mais recriada — confirmar que uma edição renova o rótulo."""
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.atualizar_lista()
+    janela.selecionar("GitHub")
+
+    def linha(nome):
+        janela.update()
+        return [w for w in janela.lista.winfo_children()
+                if w.winfo_ismapped() and w.cget("text").split("\n")[0] == nome][0]
+
+    assert "beltrano" in linha("GitHub").cget("text")
+    janela.vault["entries"]["GitHub"]["username"] = "fulano-editado"
+    janela._atualizar_texto("GitHub")
+    assert "fulano-editado" in linha("GitHub").cget("text")
+    assert _linhas_visiveis(janela) == ["GitHub", "Google", "mistral"]
 
 
 def test_travar_volta_para_o_login(app):

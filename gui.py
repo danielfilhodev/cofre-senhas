@@ -43,6 +43,13 @@ class CofreApp(ctk.CTk):
         self.f = None
         self.selecionado: str | None = None
         self._senha_visivel = False
+        self._botoes: dict = {}            # linhas reaproveitadas (nome -> botão)
+        self._linhas_visiveis: list | None = None
+        self._detalhes_mostrados: str | None = None
+        self._busca_debounce = None
+        self._cor_padrao_linha = None      # capturada do primeiro botão
+        self._hover_padrao_linha = None
+        self._destacado: str | None = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.grid_columnconfigure(0, weight=1)
@@ -112,7 +119,7 @@ class CofreApp(ctk.CTk):
         self.entry_busca = ctk.CTkEntry(esq, placeholder_text="🔍 buscar por nome, usuário ou url",
                                         height=34)
         self.entry_busca.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
-        self.entry_busca.bind("<KeyRelease>", lambda _e: self.atualizar_lista())
+        self.entry_busca.bind("<KeyRelease>", lambda _e: self._ao_digitar())
 
         self.lista = ctk.CTkScrollableFrame(esq, fg_color="transparent")
         self.lista.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 10))
@@ -232,35 +239,107 @@ class CofreApp(ctk.CTk):
                 saida.append(n)
         return saida
 
+    def _ao_digitar(self) -> None:
+        """Debounce: espera a digitação assentar antes de filtrar (90 ms)."""
+        if self._busca_debounce is not None:
+            self.after_cancel(self._busca_debounce)
+        self._busca_debounce = self.after(90, self.atualizar_lista)
+
+    def _novo_botao(self, nome: str):
+        e = self.vault["entries"][nome]
+        texto = nome + (f"\n{e['username']}" if e.get("username") else "")
+        btn = ctk.CTkButton(
+            self.lista, text=texto, anchor="w", height=48, corner_radius=10,
+            font=FONTE_NORMAL,
+            command=lambda n=nome: self.selecionar(n),
+        )
+        if self._cor_padrao_linha is None:
+            # guarda as cores do tema para restaurar quando sair da seleção
+            self._cor_padrao_linha = btn.cget("fg_color")
+            self._hover_padrao_linha = btn.cget("hover_color")
+        return btn
+
+    def _renderizar(self, nomes: list[str]) -> None:
+        """Reaproveita os botões existentes. Se o filtro só encolheu, basta
+        esconder quem saiu (a ordem continua válida); caso contrário re-empacota.
+        Muito mais barato que destruir e recriar widgets."""
+        for n in [n for n in self._botoes if n not in self.vault["entries"]]:
+            self._botoes.pop(n).destroy()
+        antigos = self._linhas_visiveis or []
+        encolheu = (antigos and set(nomes).issubset(set(antigos))
+                    and all(n in self._botoes for n in nomes))
+        if encolheu:
+            for n in antigos:
+                if n not in set(nomes):
+                    self._botoes[n].pack_forget()
+        else:
+            for n in nomes:
+                if n not in self._botoes:
+                    self._botoes[n] = self._novo_botao(n)
+            for w in self._botoes.values():
+                w.pack_forget()
+            # reordena: Tk empacota na ordem das chamadas
+            for n in nomes:
+                self._botoes[n].pack(fill="x", padx=4, pady=3)
+        self._linhas_visiveis = nomes
+        self._destacado = None   # cores podem ter mudado ao recriar linhas
+        self._destacar()
+
+    def _atualizar_texto(self, nome: str) -> None:
+        """Mantém o rótulo da linha em dia após uma edição, sem recriar a lista."""
+        w = self._botoes.get(nome)
+        if w is None or nome not in self.vault["entries"]:
+            return
+        e = self.vault["entries"][nome]
+        w.configure(text=nome + (f"\n{e['username']}" if e.get("username") else ""))
+
+    def _aplicar_cor(self, nome: str) -> None:
+        w = self._botoes.get(nome)
+        if w is None:
+            return
+        if nome == self.selecionado:
+            w.configure(fg_color="#2b7fff", hover_color="#1f5fbf")
+        elif self._cor_padrao_linha is not None:
+            w.configure(fg_color=self._cor_padrao_linha,
+                        hover_color=self._hover_padrao_linha)
+
+    def _destacar(self) -> None:
+        """Muda a cor de apenas 2 linhas (a que saiu e a que entrou), não da lista."""
+        if self._destacado == self.selecionado:
+            return
+        anterior, novo = self._destacado, self.selecionado
+        self._destacado = novo
+        if anterior:
+            self._aplicar_cor(anterior)
+        if novo:
+            self._aplicar_cor(novo)
+
     def atualizar_lista(self) -> None:
-        for w in self.lista.winfo_children():
-            w.destroy()
+        self._busca_debounce = None
+        if not getattr(self, "vault", None):
+            return
         nomes = self._nomes_filtrados()
-        for n in nomes:
-            e = self.vault["entries"][n]
-            texto = n + (f"\n{e['username']}" if e.get("username") else "")
-            cor = "#2b7fff" if n == self.selecionado else None
-            btn = ctk.CTkButton(
-                self.lista, text=texto, anchor="w", height=48, corner_radius=10,
-                fg_color=cor, hover_color="#1f5fbf" if cor else None,
-                font=FONTE_NORMAL,
-                command=lambda nome=n: self.selecionar(nome),
-            )
-            btn.pack(fill="x", padx=4, pady=3)
+        if nomes != self._linhas_visiveis:
+            self._renderizar(nomes)
         total = len(self.vault["entries"])
         self.lbl_total.configure(
             text=f"{total} entrada(s)" + ("" if len(nomes) == total else f" — {len(nomes)} na busca"))
         if self.selecionado and self.selecionado not in self.vault["entries"]:
             self.selecionado = None
+            self.detalhes_vazio(mensagem="Nenhuma entrada selecionada.")
         if self.selecionado:
-            self.selecionar(self.selecionado, atualizar_lista=False)
-        elif not self.vault["entries"]:
-            self.detalhes_vazio(mensagem="Cofre vazio — clique em “Adicionar” ou “Importar CSV”.")
-        else:
-            self.detalhes_vazio()
+            self._destacar()
+            if self.selecionado != self._detalhes_mostrados:
+                self._mostrar_detalhes()
+        elif self._detalhes_mostrados is not None:
+            if not self.vault["entries"]:
+                self.detalhes_vazio(mensagem="Cofre vazio — clique em “Adicionar” ou “Importar CSV”.")
+            else:
+                self.detalhes_vazio()
 
     def detalhes_vazio(self, mensagem: str = "Selecione uma entrada ao lado 👈") -> None:
         self.selecionado = None
+        self._detalhes_mostrados = None
         for w in self.detalhes.winfo_children():
             w.destroy()
         self.detalhes.grid_columnconfigure(1, weight=1)
@@ -268,19 +347,20 @@ class CofreApp(ctk.CTk):
                      text_color="#9aa4b2").grid(row=0, column=0, columnspan=2, pady=40)
 
     def selecionar(self, nome: str, atualizar_lista: bool = True) -> None:
+        """Seleciona uma linha. `atualizar_lista` é mantido por compatibilidade —
+        a lista agora só re-renderiza quando o resultado da busca muda."""
         if nome not in (self.vault or {}).get("entries", {}):
             return
         self.selecionado = nome
         self._senha_visivel = False
-        if atualizar_lista:
-            self.atualizar_lista()
-            return
+        self._destacar()
         self._mostrar_detalhes()
 
     def _mostrar_detalhes(self) -> None:
         nome = self.selecionado
         if not nome:
             return
+        self._detalhes_mostrados = nome
         dados = cofre.descrever_entrada(self.f, self.vault["entries"][nome])
         for w in self.detalhes.winfo_children():
             w.destroy()
@@ -411,6 +491,7 @@ class CofreApp(ctk.CTk):
             self.selecionado = nome
             janela.destroy()
             self.atualizar_lista()
+            self._atualizar_texto(nome)   # lista é reaproveitada: renova o rótulo
             self._mostrar_detalhes()
             self.status(f"salva: {nome}")
 

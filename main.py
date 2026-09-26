@@ -7,6 +7,7 @@ Comandos (todos com --help próprio):
     cofre get <nome>      mostra uma entrada (--raw = só a senha)
     cofre list            lista os nomes guardados (nunca mostra senhas)
     cofre del <nome>      apaga uma entrada (pede confirmação)
+    cofre import a.csv    importa senhas exportadas do navegador (--dry-run p/ testar)
     cofre gen             gera uma senha forte (--add <nome> já salva)
     cofre passwd          troca a senha mestra
 
@@ -19,6 +20,7 @@ Guia completo para iniciantes: README.md
 from __future__ import annotations
 
 import argparse
+import csv
 import getpass
 import json
 import os
@@ -27,6 +29,7 @@ import string
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -103,6 +106,15 @@ def unlock_existing() -> tuple[dict, Fernet]:
     return vault, unlock(vault)
 
 
+def _achar_nome(entries: dict, nome: str) -> str | None:
+    """Acha a entrada ignorando maiúsculas/minúsculas (se o nome for único)."""
+    if nome in entries:
+        return nome
+    alvo = nome.casefold()
+    iguais = [n for n in entries if n.casefold() == alvo]
+    return iguais[0] if len(iguais) == 1 else None
+
+
 # ------------------------------------------------------------------ comandos
 def cmd_init(_args) -> None:
     if VAULT_PATH.exists():
@@ -150,14 +162,15 @@ def cmd_add(args) -> None:
 
 def cmd_get(args) -> None:
     vault, f = unlock_existing()
-    entry = vault["entries"].get(args.name)
+    nome = _achar_nome(vault["entries"], args.name)
+    entry = vault["entries"].get(nome) if nome else None
     if entry is None:
-        die(f"entrada '{args.name}' não encontrada")
+        die(f"entrada '{args.name}' não encontrada — rode 'list' para ver os nomes")
     password = f.decrypt(entry["password"].encode()).decode()
     if args.raw:
         print(password)
         return
-    print(f"nome:     {args.name}")
+    print(f"nome:     {nome}")
     print(f"usuário:  {entry['username'] or '-'}")
     print(f"url:      {entry['url'] or '-'}")
     print(f"senha:    {password}")
@@ -181,16 +194,174 @@ def cmd_list(args) -> None:
 
 def cmd_del(args) -> None:
     vault, f = unlock_existing()
-    if args.name not in vault["entries"]:
-        die(f"entrada '{args.name}' não encontrada")
+    nome = _achar_nome(vault["entries"], args.name)
+    if nome is None:
+        die(f"entrada '{args.name}' não encontrada — rode 'list' para ver os nomes")
     if not args.yes:
-        ans = input(f"remover '{args.name}'? [s/N] ").strip().lower()
+        ans = input(f"remover '{nome}'? [s/N] ").strip().lower()
         if ans not in ("s", "sim", "y", "yes"):
             print("cancelado")
             return
-    del vault["entries"][args.name]
+    del vault["entries"][nome]
     save_vault(vault)
-    print(f"removida: {args.name}")
+    print(f"removida: {nome}")
+
+
+# ----------------------------------------------------- importação de CSV
+# sinônimos de colunas aceitos (Chrome/Edge/Brave/Firefox/LastPass/1Password/KeePassXC)
+_COLUNAS = {
+    "name": {"name", "title", "entry", "nome", "label", "item"},
+    "url": {"url", "urls", "origin", "login_uri", "website", "site", "address", "endereço"},
+    "username": {"username", "user", "login", "user_name", "email", "mail", "usuário", "e-mail"},
+    "password": {"password", "passwd", "pwd", "secret", "senha"},
+    "notes": {"note", "notes", "extra", "comment", "httprealm", "notas", "obs"},
+}
+
+
+def _dominio(url: str) -> str | None:
+    """'https://github.com/login' -> 'github.com'"""
+    if not url:
+        return None
+    u = url.strip()
+    if "://" not in u:
+        u = "http://" + u
+    host = urlparse(u).hostname or ""
+    host = host.lower().removeprefix("www.")
+    return host or None
+
+
+def _ler_csv(path: Path) -> tuple[list[str], list[dict]]:
+    if not path.exists():
+        die(f"arquivo não encontrado: {path}")
+    raw = path.read_bytes()
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    linhas = text.splitlines()
+    if not linhas:
+        die("o arquivo está vazio")
+    primeira = linhas[0]
+    delim = "," if primeira.count(",") >= max(primeira.count(";"), primeira.count("\t")) else (
+        ";" if primeira.count(";") >= primeira.count("\t") else "\t"
+    )
+    import io
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=delim)
+    if not reader.fieldnames:
+        die("não consegui ler o cabeçalho do CSV")
+    return list(reader.fieldnames), [dict(r) for r in reader]
+
+
+def _mapear_colunas(cabecalhos: list[str]) -> dict[str, str]:
+    """{coluna do arquivo: campo interno}"""
+    mapa: dict[str, str] = {}
+    usados: set[str] = set()
+    for h in cabecalhos:
+        k = (h or "").strip().lower().strip('"')
+        for canon, sinonimos in _COLUNAS.items():
+            if k in sinonimos and canon not in usados:
+                mapa[h] = canon
+                usados.add(canon)
+                break
+    return mapa
+
+
+def cmd_import(args) -> None:
+    cabecalhos, linhas = _ler_csv(Path(args.file).expanduser())
+    mapa = _mapear_colunas(cabecalhos)
+    if "password" not in mapa.values():
+        die(
+            "não achei uma coluna de senha no CSV.\n"
+            f"  colunas encontradas: {', '.join(cabecalhos)}\n"
+            "  esperado algo como: name,url,username,password,note"
+        )
+
+    # monta a lista do que seria importado (sem tocar no cofre ainda)
+    pendentes: list[dict] = []
+    sem_senha = vazias = 0
+    for i, linha in enumerate(linhas, start=1):
+        valores = {campo: (linha.get(col) or "").strip() for col, campo in mapa.items()}
+        senha = valores.get("password", "")
+        if not senha:
+            sem_senha += 1
+            continue
+        nome = valores.get("name") or _dominio(valores.get("url", "")) or ""
+        if not nome:
+            nome = valores.get("username") or f"entrada_{i}"
+            vazias += 1
+        pendentes.append(
+            {
+                "name": nome,
+                "username": valores.get("username", ""),
+                "url": valores.get("url", ""),
+                "password": senha,
+                "notes": valores.get("notes", ""),
+            }
+        )
+
+    print(f"arquivo:  {args.file}")
+    print(f"entradas com senha: {len(pendentes)}"
+          + (f"  |  sem senha: {sem_senha}" if sem_senha else ""))
+
+    if args.dry_run:
+        nomes = [e["name"] for e in pendentes]
+        for n in nomes[:40]:
+            print(f"  - {n}")
+        if len(nomes) > 40:
+            print(f"  ... e mais {len(nomes) - 40}")
+        print("\nmodo de teste (--dry-run): nada foi gravado.")
+        return
+
+    if not pendentes:
+        die("nenhuma entrada com senha para importar")
+
+    vault, f = unlock_existing()
+    antes = set(vault["entries"])
+    existentes = set(vault["entries"])
+    importadas = atualizadas = puladas = 0
+    agora = time.strftime("%Y-%m-%d %H:%M")
+    for e in pendentes:
+        nome = e["name"]
+        preexistente = nome in antes
+        if preexistente and not args.overwrite:
+            puladas += 1
+            continue
+        if nome in existentes and not preexistente:
+            # nome repetido dentro do próprio CSV: ganha sufixo _2, _3...
+            i = 2
+            while f"{nome}_{i}" in existentes:
+                i += 1
+            nome = f"{nome}_{i}"
+        anterior = vault["entries"].get(nome)
+        vault["entries"][nome] = {
+            "username": e["username"] or (anterior or {}).get("username", ""),
+            "url": e["url"] or (anterior or {}).get("url", ""),
+            "password": f.encrypt(e["password"].encode()).decode(),
+            "notes": e["notes"] or (anterior or {}).get("notes", ""),
+            "created": (anterior or {}).get("created", agora),
+            "updated": agora,
+        }
+        existentes.add(nome)
+        if preexistente:
+            atualizadas += 1
+        else:
+            importadas += 1
+    save_vault(vault)
+
+    print(f"\nimportadas:    {importadas}")
+    if atualizadas:
+        print(f"atualizadas:   {atualizadas}")
+    if puladas:
+        print(f"puladas:       {puladas} (já existiam — use --overwrite para atualizar)")
+    if sem_senha:
+        print(f"sem senha:     {sem_senha}")
+    if vazias:
+        print(f"sem nome/url:  {vazias} (receberam um nome genérico)")
+    print("\n⚠ apague o CSV exportado — ele contém suas senhas em texto puro.")
 
 
 def cmd_gen(args) -> None:
@@ -231,6 +402,7 @@ exemplos:
   cofre add banco                   pede a senha sem mostrar na tela
   cofre list                        mostra o que está guardado
   cofre get gmail                   mostra os dados de uma entrada
+  cofre import senhas.csv           importa um CSV exportado do navegador
   cofre gen --add netflix           gera senha forte e já salva
   cofre passwd                      troca a senha mestra
 
@@ -282,6 +454,16 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("name", metavar="nome", help="apelido da entrada, ex.: banco")
     d.add_argument("-y", "--yes", action="store_true", help="não perguntar nada (apaga direto)")
     d.set_defaults(func=cmd_del)
+
+    imp = sub.add_parser(
+        "import",
+        help="importa senhas de um CSV (Chrome, Edge, Brave, Firefox...)",
+        description="Importa um CSV exportado pelo navegador ou outro gerenciador de senhas.",
+    )
+    imp.add_argument("file", metavar="arquivo.csv", help="caminho do CSV exportado")
+    imp.add_argument("--overwrite", action="store_true", help="atualiza entradas que já existem com o mesmo nome")
+    imp.add_argument("--dry-run", action="store_true", help="só mostra o que seria importado; não grava nada")
+    imp.set_defaults(func=cmd_import)
 
     g = sub.add_parser("gen", help="gera uma senha forte e aleatória", description="Sorteia uma senha difícil de adivinhar.")
     g.add_argument("-l", "--length", type=int, default=20, metavar="N", help="tamanho da senha (padrão: 20)")

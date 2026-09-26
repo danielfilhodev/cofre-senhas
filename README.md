@@ -5,6 +5,7 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 - Não tem nuvem, não tem conta, não tem servidor: **nada sai da sua máquina**.
 - Tudo fica guardado num único arquivo, **trancado com uma senha mestra** que só você conhece.
 - Funciona em **Linux, macOS e Windows**.
+- **Importa de uma vez** as senhas que já estão salvas no Chrome, Edge, Brave ou Firefox.
 - Não precisa saber programar. Se você sabe abrir um terminal e digitar comandos, dá conta.
 
 > **Em 3 linhas:** você cria um cofre com uma senha mestra, guarda quantas senhas quiser
@@ -18,11 +19,12 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 2. [Instalação passo a passo](#2-instalação-passo-a-passo)
 3. [Primeiros passos (tutorial completo)](#3-primeiros-passos-tutorial-completo)
 4. [Todos os comandos](#4-todos-os-comandos)
-5. [Onde ficam os seus dados + backup](#5-onde-ficam-os-seus-dados--backup)
-6. [Erros comuns e como resolver](#6-erros-comuns-e-como-resolver)
-7. [Perguntas frequentes](#7-perguntas-frequentes)
-8. [Dicas de segurança (para leigos)](#8-dicas-de-segurança-para-leigos)
-9. [Como funciona por dentro (técnico)](#9-como-funciona-por-dentro-técnico)
+5. [Importar senhas do navegador](#5-importar-senhas-do-navegador)
+6. [Onde ficam os seus dados + backup](#6-onde-ficam-os-seus-dados--backup)
+7. [Erros comuns e como resolver](#7-erros-comuns-e-como-resolver)
+8. [Perguntas frequentes](#8-perguntas-frequentes)
+9. [Dicas de segurança (para leigos)](#9-dicas-de-segurança-para-leigos)
+10. [Como funciona por dentro (técnico)](#10-como-funciona-por-dentro-técnico)
 
 ---
 
@@ -200,6 +202,8 @@ atual.:   2026-09-26 07:13
 ```
 
 > Antes de mostrar, ele pede a senha mestra para destravar o cofre.
+> Não importa se você digitar `Gmail`, `GMAIL` ou `gmail` — a busca ignora
+> maiúsculas e minúsculas.
 
 ### Passo 5 — Gerar uma senha forte
 
@@ -234,6 +238,9 @@ uv run main.py passwd
 Ele pede a senha atual, depois a nova (duas vezes). **As senhas guardadas continuam
 as mesmas** — só muda o "trinco" do cofre.
 
+> Já tem um monte de senha no navegador? Pule para a
+> [seção 5](#5-importar-senhas-do-navegador) e traga tudo de uma vez.
+
 ---
 
 ## 4. Todos os comandos
@@ -246,6 +253,7 @@ as mesmas** — só muda o "trinco" do cofre.
 | `get <nome> --raw` | mostra **só** a senha (para colar num script) | `uv run main.py get gmail --raw` |
 | `list` | lista os nomes guardados (nunca mostra senhas) | `uv run main.py list` |
 | `del <nome>` | apaga uma entrada (pede confirmação) | `uv run main.py del banco -y` |
+| `import <arquivo>` | importa um CSV do navegador/gerenciador | `uv run main.py import senhas.csv` |
 | `gen` | gera uma senha forte | `uv run main.py gen -l 24` |
 | `gen --add <nome>` | gera e salva já no cofre | `uv run main.py gen --add netflix` |
 | `passwd` | troca a senha mestra | `uv run main.py passwd` |
@@ -259,12 +267,108 @@ as mesmas** — só muda o "trinco" do cofre.
 | `-n`, `--notes` | anotações livres (ex.: "pergunta secreta: nome do gato") |
 | `-p`, `--password` | passa a senha por argumento — **evite**, fica no histórico do terminal |
 
+**Opções do `import`:**
+
+| Opção | Significado |
+|---|---|
+| `--dry-run` | só mostra o que seria importado, **sem gravar nada** (nem pede a senha mestra) |
+| `--overwrite` | atualiza entradas que já existem com o mesmo nome (senão são puladas) |
+
 Esqueceu algum comando? Digite `uv run main.py --help` ou
 `uv run main.py add --help` — o ajuda está em português.
 
 ---
 
-## 5. Onde ficam os seus dados + backup
+## 5. Importar senhas do navegador
+
+Se você já salvou senhas no Chrome, Edge, Brave ou Firefox, **não precisa digitar uma
+por uma**: exporte tudo num arquivo CSV e mande para o cofre de uma vez.
+
+### Passo A — Exportar o CSV no navegador
+
+**Chrome / Edge / Brave** (mesmo caminho nos três):
+
+1. Abra a página `chrome://password-manager-passwords`
+   (no Edge: `edge://password-manager/passwords`, no Brave: `brave://password-manager/passwords`).
+2. Clique nos **3 pontinhos** ⋮ e escolha **"Exportar senhas"**.
+3. Ele vai avisar que o arquivo fica com as senhas **em texto puro** — confirme.
+4. Salve o arquivo (ex.: `senhas.csv`) numa pasta fácil de achar, como Downloads.
+
+**Firefox:**
+
+1. Abra `about:logins`.
+2. ⋮ (3 pontinhos) → **"Exportar logins"** → escolha **CSV**.
+
+> Se o navegador pedir a senha do seu usuário/computador, é normal: é uma proteção deles.
+
+### Passo B — Conferir antes de importar (recomendado)
+
+```bash
+uv run main.py import Downloads/senhas.csv --dry-run
+```
+
+```
+arquivo:  Downloads/senhas.csv
+entradas com senha: 47  |  sem senha: 2
+  - GitHub
+  - Google
+  - uol.com.br
+  ...
+
+modo de teste (--dry-run): nada foi gravado.
+```
+
+Assim você vê quantas entradas seriam importadas **sem tocar no cofre** — e nem é
+pedida a senha mestra.
+
+### Passo C — Importar de verdade
+
+```bash
+uv run main.py import Downloads/senhas.csv
+```
+
+```
+arquivo:  Downloads/senhas.csv
+entradas com senha: 47  |  sem senha: 2
+
+importadas:    47
+sem senha:     2
+
+⚠ apague o CSV exportado — ele contém suas senhas em texto puro.
+```
+
+Depois confira com `uv run main.py list` e abra uma ou duas entradas com `get`
+para garantir que as senhas estão certas.
+
+### O que acontece com cada linha
+
+- **Sem senha na linha** → é pulada (contada no resumo).
+- **Sem nome** → o app usa o **domínio da URL** (ex.: `uol.com.br`); sem URL e sem
+  nome, usa o usuário; em último caso, gera um nome genérico.
+- **Nome repetido no CSV** → a segunda vira `GitHub_2`, a terceira `GitHub_3`...
+- **Nome que já existe no cofre** → é **pulada**, para não sobrescrever o que você já
+  guardou. Para atualizar mesmo assim, use `--overwrite`.
+- **Colunas diferentes** (`name`/`title`, `url`/`origin`, `note`/`extra`...) → o app
+  reconhece sozinho. Aceita separador `,` `;` ou tab, com ou sem acento, e também
+  exportações de LastPass, 1Password e KeePassXC.
+
+### ⚠️ Depois de importar: apague o CSV
+
+O arquivo exportado contém suas senhas **abertas para qualquer um que abra o arquivo**.
+
+1. Apague o `senhas.csv` (e esvazie a lixeira).
+2. Se exportou por engano para um lugar sincronizado (OneDrive, Google Drive), apague
+   também a cópia na nuvem.
+3. O cofre, esse sim, fica cifrado — pode ficar tranquilo.
+
+### Se o navegador não exportar CSV
+
+Alguns navegadores só permitem copiar senha por senha. Nesse caso, cadastre manualmente
+com `add` — de site em site.
+
+---
+
+## 6. Onde ficam os seus dados + backup
 
 | Sistema | Local do cofre |
 |---|---|
@@ -289,14 +393,16 @@ para alguém que roubar um dos dois.
 
 ---
 
-## 6. Erros comuns e como resolver
+## 7. Erros comuns e como resolver
 
 | Mensagem | Causa | O que fazer |
 |---|---|---|
 | `erro: cofre não existe ainda — rode: ... init` | você ainda não criou o cofre | rode `init` |
 | `erro: senha mestra incorreta` | digitou errado | confira o Caps Lock e digite de novo |
 | `erro: cofre já existe em ...` | rodou `init` duas vezes | não precisa recriar; siga com `add` |
-| `erro: entrada 'x' não encontrada` | o nome está diferente do que você cadastrou | rode `list` para ver os nomes |
+| `erro: entrada 'x' não encontrada` | o nome não existe (o app já ignora maiúsculas) | rode `list` para ver os nomes |
+| `erro: arquivo não encontrado: x.csv` | caminho errado no `import` | confira onde o navegador salvou (geralmente `Downloads`) e passe o caminho completo |
+| `erro: não achei uma coluna de senha no CSV` | o arquivo não é um export de senhas | exporte de novo seguindo a [seção 5](#5-importar-senhas-do-navegador) |
 | `command not found: uv` / `'uv' não é reconhecido` | uv não instalado, ou terminal aberto antes da instalação | feche e abra o terminal de novo, ou use o [método sem uv](#método-alternativo-sem-uv) |
 | `No module named 'cryptography'` | dependência não instalada | rode `uv sync` (ou `pip install cryptography` no venv) |
 | `permission denied` ao salvar | falta de permissão na pasta | rode **sem** `sudo`; confira as permissões de `~/.cofre_senhas` |
@@ -308,7 +414,11 @@ em local físico seguro.
 
 ---
 
-## 7. Perguntas frequentes
+## 8. Perguntas frequentes
+
+**Já tenho todas as minhas senhas no Chrome. Preciso digitar tudo de novo?**
+Não. Exporte o CSV no navegador e rode `import` — veja a
+[seção 5](#5-importar-senhas-do-navegador). Em segundos está tudo no cofre.
 
 **Esqueci a senha mestra. E agora?**
 Infelizmente não há o que fazer — é proposital: se existisse um jeito de resetar,
@@ -324,6 +434,11 @@ Não, sem a senha mestra. O arquivo é cifrado.
 **Preciso de internet para usar?**
 Não. O app funciona 100% offline. A internet só é necessária para baixar o código
 a primeira vez.
+
+**Importei e o navegador continua com as senhas dele.**
+Sim, o import é uma **cópia**. Se quiser tirar do navegador: nas configurações de
+senhas dele, apague as entradas (e, se o navegador sincronizar, apague também no
+servidor de sincronização).
 
 **Meu antivírus reclamou. É vírus?**
 Não. É um programa Python comum, e o código-fonte está inteiro neste repositório —
@@ -342,24 +457,26 @@ mas quem estiver olhando a tela ainda vê.
 
 ---
 
-## 8. Dicas de segurança (para leigos)
+## 9. Dicas de segurança (para leigos)
 
 1. **Senha mestra forte e memorável.** Uma frase de 4 palavras é muito melhor
    que `Senha123!`. Ex.: `cavalo-marinho-panela-42`.
 2. **Anote a senha mestra em papel** e guarde em local físico (gaveta, cofre).
    Nunca dentro do próprio computador.
 3. **Faça backup do arquivo** `vault.json` — mas só junto com o papel da senha mestra.
-4. **Não use `-p` para digitar senhas** no terminal: fica gravado no histórico.
+4. **Apague o CSV exportado do navegador** logo depois do `import` — ele tem suas
+   senhas em texto puro.
+5. **Não use `-p` para digitar senhas** no terminal: fica gravado no histórico.
    Deixe o programa pedir.
-5. **Bloqueie a tela do computador** quando sair do lugar (no Windows: `Win+L`;
+6. **Bloqueie a tela do computador** quando sair do lugar (no Windows: `Win+L`;
    no macOS: `Ctrl+Cmd+Q`; no Linux: atalho do seu ambiente). Enquanto um terminal
    mostra a saída de um comando, quem estiver na frente vê.
-6. **Não fotografe a tela** com senhas abertas nem mande prints para ninguém.
-7. **Troque a senha mestra** de vez em quando com `passwd`.
+7. **Não fotografe a tela** com senhas abertas nem mande prints para ninguém.
+8. **Troque a senha mestra** de vez em quando com `passwd`.
 
 ---
 
-## 9. Como funciona por dentro (técnico)
+## 10. Como funciona por dentro (técnico)
 
 Para quem quer conferir antes de confiar:
 
@@ -372,6 +489,9 @@ Para quem quer conferir antes de confiar:
   errada sem vazar informação nenhuma.
 - **Armazenamento:** JSON, sem metadados sensíveis. Cada senha de entrada é um
   token Fernet individual.
+- **Importação:** o CSV é lido com detecção de codificação (UTF-8 com/sem BOM,
+  latin-1) e de separador (`,` `;` tab); as colunas são reconhecidas por sinônimos.
+  O arquivo é lido localmente — nada vai para a rede.
 - **Permissões:** pasta `700`, arquivo `600`, escrita atômica (arquivo temporário
   + troca) para não corromper o cofre se o programa fechar no meio.
 - **Sem rede:** o app não faz nenhuma requisição.

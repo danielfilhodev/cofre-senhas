@@ -1,0 +1,3 @@
+#!/bin/sh
+# Atalho: use de qualquer lugar → cofre list
+exec uv run --quiet --project /opt/data/home/cofre-senhas /opt/data/home/cofre-senhas/main.py "$@"

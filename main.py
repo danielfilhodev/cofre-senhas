@@ -84,16 +84,23 @@ def load_vault() -> dict:
         die(f"não consegui ler o cofre ({e})")
 
 
-def unlock(vault: dict) -> Fernet:
-    master = ask_master()
+def desbloquear(vault: dict, master: str) -> Fernet:
+    """Devolve o Fernet destravado. Levanta ValueError se a senha estiver errada."""
     salt = bytes(vault["kdf"]["salt"])
     key = derive_key(master, salt, vault["kdf"]["iterations"])
     f = Fernet(key)
     try:
         f.decrypt(vault["verifier"].encode())
-    except InvalidToken:
-        die("senha mestra incorreta")
+    except InvalidToken as e:
+        raise ValueError("senha mestra incorreta") from e
     return f
+
+
+def unlock(vault: dict) -> Fernet:
+    try:
+        return desbloquear(vault, ask_master())
+    except ValueError:
+        die("senha mestra incorreta")
 
 
 def save_vault(vault: dict) -> None:
@@ -186,6 +193,31 @@ def cmd_init(_args) -> None:
     print(f"cofre criado em {VAULT_PATH}")
 
 
+def montar_entrada(f: Fernet, dados: dict, anterior: dict | None = None) -> dict:
+    """Cifra `dados` e monta o dicionário da entrada (preserva created se existir)."""
+    agora = time.strftime("%Y-%m-%d %H:%M")
+    return {
+        "username": dados.get("username") or (anterior or {}).get("username", ""),
+        "url": dados.get("url") or (anterior or {}).get("url", ""),
+        "password": f.encrypt((dados.get("password") or "").encode()).decode(),
+        "notes": dados.get("notes") or (anterior or {}).get("notes", ""),
+        "created": (anterior or {}).get("created", agora),
+        "updated": agora,
+    }
+
+
+def descrever_entrada(f: Fernet, entry: dict) -> dict:
+    """Decifra uma entrada para exibição (UI/CLI)."""
+    return {
+        "username": entry.get("username", ""),
+        "url": entry.get("url", ""),
+        "password": f.decrypt(entry["password"].encode()).decode(),
+        "notes": entry.get("notes", ""),
+        "created": entry.get("created", ""),
+        "updated": entry.get("updated", ""),
+    }
+
+
 def _entry_fields(args, existing: dict | None) -> dict:
     if getattr(args, "password", None):
         password = args.password
@@ -206,8 +238,7 @@ def _entry_fields(args, existing: dict | None) -> dict:
 def cmd_add(args) -> None:
     vault, f = unlock_existing()
     existing = vault["entries"].get(args.name)
-    entry = _entry_fields(args, existing)
-    entry["password"] = f.encrypt(entry["password"].encode()).decode()
+    entry = montar_entrada(f, _entry_fields(args, existing), existing)
     vault["entries"][args.name] = entry
     save_vault(vault)
     print(f"{'atualizada' if existing else 'salva'}: {args.name}")
@@ -348,17 +379,16 @@ def _mapear_colunas(cabecalhos: list[str]) -> dict[str, str]:
     return mapa
 
 
-def cmd_import(args) -> None:
-    cabecalhos, linhas = _ler_csv(Path(args.file).expanduser())
+def entradas_de_importacao(cabecalhos: list[str], linhas: list[dict]) -> tuple[list[dict], int, int]:
+    """CSV -> lista do que importar. Levanta ValueError se o formato não servir."""
     mapa = _mapear_colunas(cabecalhos)
     if "password" not in mapa.values():
-        die(
+        raise ValueError(
             "não achei uma coluna de senha no CSV.\n"
             f"  colunas encontradas: {', '.join(cabecalhos)}\n"
             "  esperado algo como: name,url,username,password,note"
         )
 
-    # monta a lista do que seria importado (sem tocar no cofre ainda)
     pendentes: list[dict] = []
     sem_senha = vazias = 0
     for i, linha in enumerate(linhas, start=1):
@@ -380,6 +410,15 @@ def cmd_import(args) -> None:
                 "notes": valores.get("notes", ""),
             }
         )
+    return pendentes, sem_senha, vazias
+
+
+def cmd_import(args) -> None:
+    cabecalhos, linhas = _ler_csv(Path(args.file).expanduser())
+    try:
+        pendentes, sem_senha, vazias = entradas_de_importacao(cabecalhos, linhas)
+    except ValueError as e:
+        die(str(e))
 
     print(f"arquivo:  {args.file}")
     print(f"entradas com senha: {len(pendentes)}"
@@ -415,14 +454,7 @@ def cmd_import(args) -> None:
                 i += 1
             nome = f"{nome}_{i}"
         anterior = vault["entries"].get(nome)
-        vault["entries"][nome] = {
-            "username": e["username"] or (anterior or {}).get("username", ""),
-            "url": e["url"] or (anterior or {}).get("url", ""),
-            "password": f.encrypt(e["password"].encode()).decode(),
-            "notes": e["notes"] or (anterior or {}).get("notes", ""),
-            "created": (anterior or {}).get("created", agora),
-            "updated": agora,
-        }
+        vault["entries"][nome] = montar_entrada(f, e, anterior)
         existentes.add(nome)
         if preexistente:
             atualizadas += 1
@@ -442,14 +474,19 @@ def cmd_import(args) -> None:
     print("\n⚠ apague o CSV exportado — ele contém suas senhas em texto puro.")
 
 
-def cmd_gen(args) -> None:
+def gerar_senha(tamanho: int = 20, simbolos: bool = True) -> str:
     alphabet = string.ascii_letters + string.digits
-    if args.symbols:
+    if simbolos:
         alphabet += "!@#$%&*+-=?_"
     for _ in range(100):
-        pw = "".join(secrets.choice(alphabet) for _ in range(args.length))
-        if args.length >= 8 and len(set(pw)) >= max(4, args.length // 3):
+        pw = "".join(secrets.choice(alphabet) for _ in range(tamanho))
+        if tamanho >= 8 and len(set(pw)) >= max(4, tamanho // 3):
             break
+    return pw
+
+
+def cmd_gen(args) -> None:
+    pw = gerar_senha(args.length, args.symbols)
     if args.add:
         args.password = pw
         cmd_add(args)

@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    name: testes (${{ matrix.os }})
+    name: testes CLI (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +24,44 @@ jobs:
         run: uv sync
 
       - name: Compila o código (pega erro de sintaxe)
-        run: uv run python -m py_compile main.py
+        run: uv run python -m py_compile main.py gui.py
 
       - name: Roda a suíte de testes
-        run: uv run pytest -q
+        run: uv run pytest -q -rs
+
+      - name: "Info (não falha): o Python do uv tem tkinter?"
+        shell: bash
+        run: uv run python -c "import tkinter; print('uv TEM tkinter')" || echo "uv SEM tkinter neste SO"
+
+  gui:
+    name: testes UI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      # o Python do setup-python vem com tkinter; o gerenciado pelo uv não tem
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Instala dependências
+        run: pip install cryptography customtkinter pytest
+
+      - name: Checa tkinter (se faltar, o teste da UI pula em vez de falhar)
+        shell: bash
+        run: python -c "import tkinter; print('tkinter ok')" || echo "sem tkinter aqui"
+
+      - name: Roda a suíte inteira (UI incluída)
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a python -m pytest -q -rs
+          else
+            python -m pytest -q -rs
+          fi

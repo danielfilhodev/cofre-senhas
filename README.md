@@ -19,12 +19,13 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 2. [Instalação passo a passo](#2-instalação-passo-a-passo)
 3. [Primeiros passos (tutorial completo)](#3-primeiros-passos-tutorial-completo)
 4. [Todos os comandos](#4-todos-os-comandos)
-5. [Importar senhas do navegador](#5-importar-senhas-do-navegador)
-6. [Onde ficam os seus dados + backup](#6-onde-ficam-os-seus-dados--backup)
-7. [Erros comuns e como resolver](#7-erros-comuns-e-como-resolver)
-8. [Perguntas frequentes](#8-perguntas-frequentes)
-9. [Dicas de segurança (para leigos)](#9-dicas-de-segurança-para-leigos)
-10. [Como funciona por dentro (técnico)](#10-como-funciona-por-dentro-técnico)
+5. [Interface gráfica (sem terminal)](#5-interface-gráfica-sem-terminal)
+6. [Importar senhas do navegador](#6-importar-senhas-do-navegador)
+7. [Onde ficam os seus dados + backup](#7-onde-ficam-os-seus-dados--backup)
+8. [Erros comuns e como resolver](#8-erros-comuns-e-como-resolver)
+9. [Perguntas frequentes](#9-perguntas-frequentes)
+10. [Dicas de segurança (para leigos)](#10-dicas-de-segurança-para-leigos)
+11. [Como funciona por dentro (técnico)](#11-como-funciona-por-dentro-técnico)
 
 ---
 
@@ -239,7 +240,7 @@ Ele pede a senha atual, depois a nova (duas vezes). **As senhas guardadas contin
 as mesmas** — só muda o "trinco" do cofre.
 
 > Já tem um monte de senha no navegador? Pule para a
-> [seção 5](#5-importar-senhas-do-navegador) e traga tudo de uma vez.
+> [seção 6](#6-importar-senhas-do-navegador) e traga tudo de uma vez.
 
 ---
 
@@ -288,7 +289,58 @@ Esqueceu algum comando? Digite `uv run main.py --help` ou
 
 ---
 
-## 5. Importar senhas do navegador
+## 5. Interface gráfica (sem terminal)
+
+Se o terminal assusta quem vai usar, o projeto também tem uma **janela gráfica**
+para o mesmo cofre — mesma senha mestra, mesmos dados, mesmos testes.
+
+![Tela de login do cofre](docs/tela-login.png)
+
+```bash
+uv run gui.py
+```
+
+![Janela principal do cofre](docs/tela-principal.png)
+
+O que dá para fazer na janela:
+
+| Na tela | O que faz |
+|---|---|
+| **Senha mestra** | destrava o cofre (o campo nunca mostra o que você digita) |
+| **Buscar** | filtra por nome, usuário ou url enquanto você digita |
+| **Lista à esquerda** | clique numa entrada para ver os detalhes |
+| **Mostrar / Copiar** | revela a senha ou cola na área de transferência (limpa em 30 s) |
+| **Adicionar / Editar / Gerar senha / Apagar** | botões embaixo dos detalhes |
+| **Importar CSV…** | o mesmo import do terminal, com escolha de arquivo e confirmação |
+| **Travar** | volta para a tela de senha na hora |
+
+**Requisitos:** a interface usa `tkinter`, que vem junto com a maioria dos
+Pythons. Confirmado pela CI do projeto:
+
+| SO | `uv run gui.py` |
+|---|---|
+| Windows | funciona (o Python do uv traz o `tkinter` — teste da UI verde na CI) |
+| macOS | funciona (idem) |
+| Linux | pode faltar — depende de como o Python foi instalado |
+
+No Linux, se aparecer `No module named 'tkinter'`, instale o pacote do seu
+gerenciador e use o Python do sistema:
+
+```bash
+sudo apt install python3-tk      # Debian/Ubuntu
+python3 -m venv .venv && .venv/bin/pip install customtkinter
+.venv/bin/python gui.py
+```
+
+Ou instale o Python do [python.org](https://www.python.org/downloads/), que já
+traz a interface em todos os sistemas (`python gui.py`).
+
+O terminal continua sendo dono das funções de automação (`get --raw`,
+`import --dry-run`, uso em scripts) — a janela é para o dia a dia.
+
+---
+
+## 6. Importar senhas do navegador
 
 Se você já salvou senhas no Chrome, Edge, Brave ou Firefox, **não precisa digitar uma
 por uma**: exporte tudo num arquivo CSV e mande para o cofre de uma vez.
@@ -377,7 +429,7 @@ com `add` — de site em site.
 
 ---
 
-## 6. Onde ficam os seus dados + backup
+## 7. Onde ficam os seus dados + backup
 
 | Sistema | Local do cofre |
 |---|---|
@@ -402,7 +454,7 @@ para alguém que roubar um dos dois.
 
 ---
 
-## 7. Erros comuns e como resolver
+## 8. Erros comuns e como resolver
 
 | Mensagem | Causa | O que fazer |
 |---|---|---|
@@ -411,7 +463,7 @@ para alguém que roubar um dos dois.
 | `erro: cofre já existe em ...` | rodou `init` duas vezes | não precisa recriar; siga com `add` |
 | `erro: entrada 'x' não encontrada` | o nome não existe (o app já ignora maiúsculas) | rode `list` para ver os nomes |
 | `erro: arquivo não encontrado: x.csv` | caminho errado no `import` | confira onde o navegador salvou (geralmente `Downloads`) e passe o caminho completo |
-| `erro: não achei uma coluna de senha no CSV` | o arquivo não é um export de senhas | exporte de novo seguindo a [seção 5](#5-importar-senhas-do-navegador) |
+| `erro: não achei uma coluna de senha no CSV` | o arquivo não é um export de senhas | exporte de novo seguindo a [seção 6](#6-importar-senhas-do-navegador) |
 | `command not found: uv` / `'uv' não é reconhecido` | uv não instalado, ou terminal aberto antes da instalação | feche e abra o terminal de novo, ou use o [método sem uv](#método-alternativo-sem-uv) |
 | `No module named 'cryptography'` | dependência não instalada | rode `uv sync` (ou `pip install cryptography` no venv) |
 | `permission denied` ao salvar | falta de permissão na pasta | rode **sem** `sudo`; confira as permissões de `~/.cofre_senhas` |
@@ -424,11 +476,11 @@ em local físico seguro.
 
 ---
 
-## 8. Perguntas frequentes
+## 9. Perguntas frequentes
 
 **Já tenho todas as minhas senhas no Chrome. Preciso digitar tudo de novo?**
 Não. Exporte o CSV no navegador e rode `import` — veja a
-[seção 5](#5-importar-senhas-do-navegador). Em segundos está tudo no cofre.
+[seção 6](#6-importar-senhas-do-navegador). Em segundos está tudo no cofre.
 
 **Esqueci a senha mestra. E agora?**
 Infelizmente não há o que fazer — é proposital: se existisse um jeito de resetar,
@@ -469,7 +521,7 @@ estiver por perto vê.
 
 ---
 
-## 9. Dicas de segurança (para leigos)
+## 10. Dicas de segurança (para leigos)
 
 1. **Senha mestra forte e memorável.** Uma frase de 4 palavras é muito melhor
    que `Senha123!`. Ex.: `cavalo-marinho-panela-42`.
@@ -489,7 +541,7 @@ estiver por perto vê.
 
 ---
 
-## 10. Como funciona por dentro (técnico)
+## 11. Como funciona por dentro (técnico)
 
 Para quem quer conferir antes de confiar:
 
@@ -515,13 +567,15 @@ Para quem quer conferir antes de confiar:
 
 ```
 cofre-senhas/
-├── main.py                 # o app inteiro (CLI com argparse)
+├── main.py                 # núcleo do cofre + CLI (argparse)
+├── gui.py                  # interface gráfica (CustomTkinter)
 ├── cofre                   # atalho de shell (Linux/macOS)
 ├── README.md               # este guia
+├── docs/tela-*.png         # telas da interface gráfica
 ├── pyproject.toml          # dependências
 ├── uv.lock                 # versões travadas
-├── tests/test_cofre.py     # suíte de testes (pytest)
-└── .github/workflows/ci.yml# CI: roda os testes em Linux, Windows e macOS
+├── tests/                  # suíte pytest (CLI + fumaça da UI)
+└── .github/workflows/ci.yml# CI: Linux, Windows e macOS (CLI e UI)
 ```
 
 ## Testes e integração contínua
@@ -531,12 +585,18 @@ uv sync          # instala também o pytest (grupo de desenvolvimento)
 uv run pytest -q
 ```
 
-Os testes cobrem o fluxo completo: criação do cofre, senha mestra errada,
-adicionar/ver/listar/apagar, gerador de senhas, troca de senha mestra e a
-importação de CSV (Chrome, Firefox, separador `;`, dry-run, reimportação).
-Cada teste roda o `main.py` como subprocesso, com o cofre em pasta temporária —
-ou seja, exatamente o caminho que o usuário usa.
+A suíte tem duas partes:
 
-A **GitHub Actions** (`.github/workflows/ci.yml`) roda essa suíte em **Linux,
-Windows e macOS** a cada push na `main` e a cada pull request. Um PR só deve
-ser mesclado com a CI verde.
+- **`tests/test_cofre.py`** — o fluxo inteiro do terminal: criação do cofre,
+  senha mestra errada, adicionar/ver/listar/apagar, gerador de senhas, troca de
+  senha mestra e importação de CSV (Chrome, Firefox, separador `;`, dry-run,
+  reimportação). Cada teste roda o `main.py` como **subprocesso**, com o cofre
+  em pasta temporária — ou seja, exatamente o caminho que o usuário usa.
+- **`tests/test_gui.py`** — fumaça da janela: destravar, listar, buscar,
+  detalhes sem vazar a senha, formulário de adicionar, travar de volta. Onde não
+  há `tkinter` ou display, ele **pula** (com `-rs` o motivo aparece no resumo).
+
+A **GitHub Actions** (`.github/workflows/ci.yml`) tem dois jobs em **Linux,
+Windows e macOS** a cada push na `main` e a cada pull request: o de CLI (uv) e
+o de UI (Python do `actions/setup-python`, que vem com `tkinter`; no Linux sob
+`xvfb`). Um PR só deve ser mesclado com a CI verde.

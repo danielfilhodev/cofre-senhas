@@ -4,7 +4,8 @@
 Comandos (todos com --help próprio):
     cofre init      cria o cofre e define a senha mestra (uma única vez)
     cofre add <nome>      guarda/atualiza uma entrada
-    cofre get <nome>      mostra uma entrada (--raw = só a senha)
+    cofre get <nome>      mostra uma entrada (--raw = só a senha,
+                          --copy = cola na área de transferência e limpa sozinha)
     cofre list            lista os nomes guardados (nunca mostra senhas)
     cofre del <nome>      apaga uma entrada (pede confirmação)
     cofre import a.csv    importa senhas exportadas do navegador (--dry-run p/ testar)
@@ -25,7 +26,9 @@ import getpass
 import json
 import os
 import secrets
+import shutil
 import string
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -115,6 +118,56 @@ def _achar_nome(entries: dict, nome: str) -> str | None:
     return iguais[0] if len(iguais) == 1 else None
 
 
+# ------------------------------------------------- área de transferência
+def _clip_cmd() -> tuple[list[str], list[str]] | None:
+    """(comando para ESCREVER, comando para LER) a área de transferência, ou None."""
+    if sys.platform == "darwin":
+        if shutil.which("pbcopy"):
+            return ["pbcopy"], ["pbpaste"]
+        return None
+    if os.name == "nt":
+        if shutil.which("clip") and shutil.which("powershell"):
+            return ["clip"], ["powershell", "-NoProfile", "-Command", "Get-Clipboard"]
+        return None
+    # Linux/Unix: Wayland primeiro, depois X11
+    if shutil.which("wl-copy") and shutil.which("wl-paste"):
+        return ["wl-copy"], ["wl-paste", "--no-newline"]
+    if shutil.which("xclip"):
+        return ["xclip", "-selection", "clipboard"], ["xclip", "-selection", "clipboard", "-o"]
+    if shutil.which("xsel"):
+        return ["xsel", "--clipboard", "--input"], ["xsel", "--clipboard", "--output"]
+    return None
+
+
+def _para_area_transferencia(texto: str) -> str | None:
+    """Copia para a área de transferência. Devolve None em sucesso, ou uma mensagem de erro."""
+    cmd = _clip_cmd()
+    if cmd is None:
+        return (
+            "não consegui acessar a área de transferência neste computador.\n"
+            "  instale: Linux -> xclip (Debian/Ubuntu: sudo apt install xclip) ou wl-clipboard; "
+            "macOS e Windows já têm nativamente"
+        )
+    try:
+        p = subprocess.run(cmd[0], input=texto, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except OSError as e:
+        return f"falha ao usar {cmd[0][0]}: {e}"
+    if p.returncode != 0:
+        return f"falha ao usar {cmd[0][0]}: {p.stderr.strip() or 'erro desconhecido'}"
+    return None
+
+
+def _ler_area_transferencia() -> str | None:
+    cmd = _clip_cmd()
+    if cmd is None:
+        return None
+    try:
+        p = subprocess.run(cmd[1], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
 # ------------------------------------------------------------------ comandos
 def cmd_init(_args) -> None:
     if VAULT_PATH.exists():
@@ -166,9 +219,34 @@ def cmd_get(args) -> None:
     entry = vault["entries"].get(nome) if nome else None
     if entry is None:
         die(f"entrada '{args.name}' não encontrada — rode 'list' para ver os nomes")
+    if args.raw and args.copy:
+        die("--raw e --copy não combinam (escolha um)")
     password = f.decrypt(entry["password"].encode()).decode()
     if args.raw:
         print(password)
+        return
+    if args.copy:
+        args.timeout = max(0, args.timeout)
+        erro = _para_area_transferencia(password)
+        if erro:
+            die(erro)
+        print(f"nome:     {nome}")
+        print(f"usuário:  {entry['username'] or '-'}")
+        print(f"url:      {entry['url'] or '-'}")
+        fim = f" (limpa em {args.timeout}s)" if args.timeout > 0 else ""
+        print(f"senha:    copiada para a área de transferência{fim}")
+        if args.timeout > 0:
+            try:
+                time.sleep(args.timeout)
+            except KeyboardInterrupt:
+                print("\nsaindo sem limpar a área de transferência")
+                return
+            atual = _ler_area_transferencia()
+            if atual is None or atual.strip() == password.strip():
+                _para_area_transferencia("")
+                print("área de transferência limpa")
+            else:
+                print("área de transferência mantida (você copiou outra coisa nesse meio-tempo)")
         return
     print(f"nome:     {nome}")
     print(f"usuário:  {entry['username'] or '-'}")
@@ -444,6 +522,9 @@ def build_parser() -> argparse.ArgumentParser:
     get = sub.add_parser("get", help="mostra os dados de uma entrada", description="Desbloqueia o cofre e mostra uma entrada.")
     get.add_argument("name", metavar="nome", help="apelido da entrada, ex.: gmail")
     get.add_argument("--raw", action="store_true", help="imprime só a senha, sem rótulos (para uso em scripts)")
+    get.add_argument("--copy", action="store_true", help="copia a senha para a área de transferência (não imprime na tela)")
+    get.add_argument("--timeout", type=int, default=30, metavar="SEG",
+                     help="segundos até limpar a área de transferência no --copy (0 = não limpar; padrão: 30)")
     get.set_defaults(func=cmd_get)
 
     lst = sub.add_parser("list", help="lista os nomes guardados", description="Mostra os nomes das entradas (nunca as senhas).")

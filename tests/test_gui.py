@@ -17,6 +17,21 @@ tk = pytest.importorskip("tkinter", reason="tkinter indisponível neste Python")
 if sys.platform not in ("win32", "darwin") and not os.environ.get("DISPLAY"):
     pytest.skip("sem display (X11/Wayland) para a janela", allow_module_level=True)
 
+
+def _ambiente_grafico_utilizavel() -> None:
+    """Alguns Pythons têm o import do tkinter mas o Tcl quebrado (ex.: sem init.tcl).
+    Nesse caso a UI não roda aqui — pulamos em vez de quebrar a suíte."""
+    try:
+        raiz = tk.Tk()
+        raiz.withdraw()
+        raiz.update()
+        raiz.destroy()
+    except tk.TclError as e:
+        pytest.skip(f"tkinter sem ambiente gráfico utilizável: {e}", allow_module_level=True)
+
+
+_ambiente_grafico_utilizavel()
+
 MASTER = "frase-mestra-de-teste-gui"
 
 

@@ -1,9 +1,14 @@
 [project]
 name = "cofre-senhas"
 version = "0.1.0"
-description = "Add your description here"
+description = "Cofre de senhas local e criptografado (CLI, offline)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cryptography>=50.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
 ]

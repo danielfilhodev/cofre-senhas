@@ -314,15 +314,26 @@ O que dá para fazer na janela:
 | **Importar CSV…** | o mesmo import do terminal, com escolha de arquivo e confirmação |
 | **Travar** | volta para a tela de senha na hora |
 
-**Requisitos:** o Python oficial (python.org) em Windows e macOS já traz a
-interface. No Linux o pacote `python3-tk` pode faltar
-(`sudo apt install python3-tk`) — e o Python instalado pelo `uv` também não o
-traz. Se `uv run gui.py` reclamar de `tkinter`, use o Python do
-[python.org](https://www.python.org/downloads/) para rodar a janela:
+**Requisitos:** a interface usa `tkinter`, que vem junto com a maioria dos
+Pythons. Confirmado pela CI do projeto:
 
-```powershell
-python gui.py        # com o Python oficial instalado
+| SO | `uv run gui.py` |
+|---|---|
+| Windows | funciona (o Python do uv traz o `tkinter` — teste da UI verde na CI) |
+| macOS | funciona (idem) |
+| Linux | pode faltar — depende de como o Python foi instalado |
+
+No Linux, se aparecer `No module named 'tkinter'`, instale o pacote do seu
+gerenciador e use o Python do sistema:
+
+```bash
+sudo apt install python3-tk      # Debian/Ubuntu
+python3 -m venv .venv && .venv/bin/pip install customtkinter
+.venv/bin/python gui.py
 ```
+
+Ou instale o Python do [python.org](https://www.python.org/downloads/), que já
+traz a interface em todos os sistemas (`python gui.py`).
 
 O terminal continua sendo dono das funções de automação (`get --raw`,
 `import --dry-run`, uso em scripts) — a janela é para o dia a dia.

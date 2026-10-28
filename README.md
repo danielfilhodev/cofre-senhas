@@ -310,8 +310,8 @@ O que dá para fazer na janela:
 | **Buscar** | filtra por nome, usuário ou url enquanto você digita |
 | **Lista à esquerda** | clique numa entrada para ver os detalhes |
 | **Mostrar / Copiar** | revela a senha ou cola na área de transferência (limpa em 30 s) |
-| **Adicionar / Editar / Gerar senha / Apagar** | botões embaixo dos detalhes |
-| **Importar CSV…** | o mesmo import do terminal, com escolha de arquivo e confirmação |
+| **＋ Nova entrada ▾** | menu no topo: preencher manualmente, criar com senha forte gerada ou importar CSV do navegador |
+| **Editar / Apagar** | aparecem embaixo dos detalhes quando uma entrada está selecionada |
 | **Travar** | volta para a tela de senha na hora |
 
 **Requisitos:** a interface usa `tkinter`, que vem junto com a maioria dos

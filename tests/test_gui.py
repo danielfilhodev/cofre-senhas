@@ -241,3 +241,49 @@ def test_entrar_converte_cofre_antigo(app, tmp_path):
     texto = main.VAULT_PATH.read_text(encoding="utf-8")
     assert json.loads(texto)["version"] == 2
     assert "beltrano" not in texto and "GitHub" not in texto
+
+
+def test_editar_e_apagar_so_com_selecao(app):
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.main_view.tkraise()
+    janela.atualizar_lista()
+    janela.update()
+    assert not janela.acoes_entrada.winfo_ismapped()   # nada selecionado
+
+    janela.selecionar("GitHub")
+    janela.update()
+    assert janela.acoes_entrada.winfo_ismapped()
+
+    janela.travar()
+    janela.update()
+    assert not janela.acoes_entrada.winfo_manager()
+
+
+def test_menu_nova_entrada(app, monkeypatch):
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.main_view.tkraise()
+    janela.update()
+    assert not janela.menu_novo_aberto()
+
+    janela.alternar_menu_novo()
+    janela.update()
+    assert janela.menu_novo_aberto()
+    textos = [b.cget("text").split("\n")[0] for b in janela._opcoes_menu_novo]
+    assert any("manualmente" in t for t in textos)
+    assert any("senha forte" in t for t in textos)
+    assert any("Importar" in t for t in textos)
+
+    # escolher uma opção fecha o menu e chama a ação
+    chamadas = []
+    monkeypatch.setattr(janela, "adicionar", lambda: chamadas.append("adicionar"))
+    janela._escolher_no_menu(lambda: janela.adicionar())
+    janela.update()
+    assert chamadas == ["adicionar"]
+    assert not janela.menu_novo_aberto()
+
+    # clicar de novo no botão abre; clicar outra vez fecha
+    janela.alternar_menu_novo()
+    janela.alternar_menu_novo()
+    assert not janela.menu_novo_aberto()

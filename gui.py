@@ -28,6 +28,15 @@ FONTE_NORMAL: ctk.CTkFont | None = None
 FONTE_PEQUENA: ctk.CTkFont | None = None
 
 
+def _alinhar_esquerda(btn: ctk.CTkButton) -> None:
+    """Texto de várias linhas alinhado à esquerda. O CTkButton não expõe
+    `justify`; o rótulo interno é recriado quando o texto fica vazio, então
+    chame de novo depois de cada `configure(text=...)`."""
+    rotulo = getattr(btn, "_text_label", None)
+    if rotulo is not None:
+        rotulo.configure(justify="left")
+
+
 class CofreApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
@@ -106,8 +115,10 @@ class CofreApp(ctk.CTk):
         topo.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(topo, text="🔐 Cofre de Senhas", font=FONTE_TITULO).grid(
             row=0, column=0, sticky="w")
-        ctk.CTkButton(topo, text="Importar CSV…", width=130, height=34,
-                      command=self.importar_csv).grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.btn_novo = ctk.CTkButton(topo, text="＋ Nova entrada  ▾", width=160, height=34,
+                                      fg_color="#2f9e6e", hover_color="#26815b",
+                                      command=self.alternar_menu_novo)
+        self.btn_novo.grid(row=0, column=1, sticky="e", padx=(0, 8))
         ctk.CTkButton(topo, text="Travar", width=90, height=34, fg_color="#444b57",
                       hover_color="#343a44", command=self.travar).grid(row=0, column=2, sticky="e")
 
@@ -149,23 +160,80 @@ class CofreApp(ctk.CTk):
         self.detalhes.grid(row=0, column=0, sticky="nsew", padx=24, pady=18)
         self.detalhes.grid_columnconfigure(1, weight=1)
 
-        botoes = ctk.CTkFrame(dir_, fg_color="transparent")
-        botoes.grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 18))
-        for i, (texto, cmd, cor) in enumerate([
-            ("Adicionar", self.adicionar, None),
-            ("Editar", self.editar, None),
-            ("Gerar senha", self.gerar, "#2f9e6e"),
-            ("Apagar", self.apagar, "#b03a3a"),
-        ]):
-            ctk.CTkButton(botoes, text=texto, width=120, height=36, command=cmd,
-                          fg_color=cor, hover_color=cor if cor else None).grid(
-                row=0, column=i, padx=(0, 8))
+        # ações da entrada selecionada: só aparecem quando há uma seleção
+        self.acoes_entrada = ctk.CTkFrame(dir_, fg_color="transparent")
+        self.acoes_entrada.grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 18))
+        ctk.CTkButton(self.acoes_entrada, text="Editar", width=120, height=36,
+                      command=self.editar).grid(row=0, column=0, padx=(0, 8))
+        ctk.CTkButton(self.acoes_entrada, text="Apagar", width=120, height=36,
+                      fg_color="#b03a3a", hover_color="#8f2f2f",
+                      command=self.apagar).grid(row=0, column=1)
+        self.acoes_entrada.grid_remove()
+
+        self._montar_menu_novo()
 
         self.lbl_status = ctk.CTkLabel(self.main_view, text="", font=FONTE_PEQUENA,
                                        text_color="#9aa4b2", anchor="w")
         self.lbl_status.grid(row=2, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 10))
 
         self.detalhes_vazio()
+
+    # ------------------------------------------------------ menu "Nova entrada"
+    def _montar_menu_novo(self) -> None:
+        """Menu suspenso do botão "＋ Nova entrada": as formas de criar entradas."""
+        self.menu_novo = ctk.CTkFrame(self.main_view, corner_radius=10, border_width=1,
+                                      fg_color="#2b2f36", border_color="#3a404a")
+        self._opcoes_menu_novo = []
+        for i, (texto, dica, cmd) in enumerate([
+            ("✏  Preencher manualmente", "você digita usuário e senha", self.adicionar),
+            ("🎲  Com senha forte gerada", "o cofre cria uma senha de 20 caracteres", self.gerar),
+            ("📥  Importar do navegador…", "CSV exportado do Chrome, Edge, Firefox…",
+             self.importar_csv),
+        ]):
+            btn = ctk.CTkButton(
+                self.menu_novo, text=f"{texto}\n{dica}", anchor="w", width=290, height=50,
+                corner_radius=8, fg_color="transparent", hover_color="#3a404a",
+                font=FONTE_PEQUENA, command=lambda c=cmd: self._escolher_no_menu(c))
+            btn.grid(row=i, column=0, sticky="ew", padx=6, pady=(6 if i == 0 else 0, 6))
+            _alinhar_esquerda(btn)
+            self._opcoes_menu_novo.append(btn)
+        self.bind_all("<Button-1>", self._clique_fora_do_menu, add="+")
+        self.bind_all("<Escape>", lambda _e: self.fechar_menu_novo(), add="+")
+
+    def menu_novo_aberto(self) -> bool:
+        return bool(self.menu_novo.winfo_manager())
+
+    def alternar_menu_novo(self) -> None:
+        if self.menu_novo_aberto():
+            self.fechar_menu_novo()
+            return
+        # logo abaixo do botão, alinhado pela direita
+        self.menu_novo.place(in_=self.btn_novo, relx=1.0, rely=1.0, anchor="ne", y=6)
+        self.menu_novo.lift()
+
+    def fechar_menu_novo(self) -> None:
+        self.menu_novo.place_forget()
+
+    def _escolher_no_menu(self, acao) -> None:
+        self.fechar_menu_novo()
+        acao()
+
+    def _clique_fora_do_menu(self, evento) -> None:
+        if not self.menu_novo_aberto():
+            return
+        w = evento.widget
+        dentro = (self.menu_novo, self.btn_novo)
+        while w is not None:
+            if w in dentro:
+                return
+            w = getattr(w, "master", None)
+        self.fechar_menu_novo()
+
+    def _mostrar_acoes(self, visiveis: bool) -> None:
+        if visiveis:
+            self.acoes_entrada.grid()
+        else:
+            self.acoes_entrada.grid_remove()
 
     # ------------------------------------------------------- desbloqueio
     def entrar(self) -> None:
@@ -206,6 +274,7 @@ class CofreApp(ctk.CTk):
     def travar(self) -> None:
         self.vault = None
         self.f = None
+        self.fechar_menu_novo()
         self.selecionado = None
         self._linhas_visiveis = None
         self._topo = 0
@@ -339,6 +408,7 @@ class CofreApp(ctk.CTk):
             else:
                 btn.configure(text=texto, fg_color=self._cor_padrao_linha,
                               hover_color=self._hover_padrao_linha)
+            _alinhar_esquerda(btn)
             self._pool_estado[i] = estado
         if nomes:
             self.barra.set(self._topo / len(nomes),
@@ -420,13 +490,14 @@ class CofreApp(ctk.CTk):
                 self._mostrar_detalhes()
         elif self._detalhes_mostrados is not None:
             if not self.vault["entries"]:
-                self.detalhes_vazio(mensagem="Cofre vazio — clique em “Adicionar” ou “Importar CSV”.")
+                self.detalhes_vazio(mensagem="Cofre vazio — clique em “＋ Nova entrada” lá em cima.")
             else:
                 self.detalhes_vazio()
 
     def detalhes_vazio(self, mensagem: str = "Selecione uma entrada ao lado 👈") -> None:
         self.selecionado = None
         self._detalhes_mostrados = None
+        self._mostrar_acoes(False)
         for w in self.detalhes.winfo_children():
             w.destroy()
         self.detalhes.grid_columnconfigure(1, weight=1)
@@ -448,6 +519,7 @@ class CofreApp(ctk.CTk):
         if not nome:
             return
         self._detalhes_mostrados = nome
+        self._mostrar_acoes(True)
         dados = cofre.descrever_entrada(self.f, self.vault["entries"][nome])
         for w in self.detalhes.winfo_children():
             w.destroy()

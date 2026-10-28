@@ -468,7 +468,10 @@ com `add` — de site em site.
 | Windows | `C:\Users\voce\.cofre_senhas\vault.json` |
 
 - Em Linux/macOS a pasta tem permissão `700` e o arquivo `600` (só o seu usuário lê).
-- O arquivo é **ilegível sem a senha mestra**: é só texto embaralhado.
+- O arquivo é **ilegível sem a senha mestra**: é só texto embaralhado. Nem os
+  nomes das entradas, usuários, sites ou notas aparecem, só um bloco cifrado.
+- Cofres criados em versões antigas (que deixavam nome, usuário, url e notas
+  legíveis) são convertidos sozinhos na primeira vez que você os destrava.
 - Na [versão portátil](#versão-portátil-pendrive-sem-instalar-nada) o cofre fica em `cofre_dados` ao lado do `.exe`.
 - O caminho pode ser mudado definindo a variável de ambiente `COFRE_DIR`.
 
@@ -583,8 +586,13 @@ Para quem quer conferir antes de confiar:
   manual do arquivo invalida a leitura.
 - **Verificador:** um bloco cifrado de conteúdo conhecido detecta senha mestra
   errada sem vazar informação nenhuma.
-- **Armazenamento:** JSON, sem metadados sensíveis. Cada senha de entrada é um
-  token Fernet individual.
+- **Armazenamento:** JSON com só quatro campos: `version`, `kdf` (salt e
+  iterações), `verifier` e `data`. Todo o conteúdo do cofre (nomes, usuários,
+  urls, notas e senhas) fica dentro de `data`, um único token Fernet. Dentro
+  dele, cada senha ainda é um token Fernet próprio, então destravar o cofre não
+  deixa as senhas decifradas na memória até você pedir para ver uma.
+- **Migração:** cofres da versão 1 (só a senha cifrada) abrem normalmente e são
+  regravados na versão 2 ao destravar.
 - **Importação:** o CSV é lido com detecção de codificação (UTF-8 com/sem BOM,
   latin-1) e de separador (`,` `;` tab); as colunas são reconhecidas por sinônimos.
   O arquivo é lido localmente — nada vai para a rede.

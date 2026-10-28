@@ -182,6 +182,7 @@ class CofreApp(ctk.CTk):
             try:
                 vault = json.loads(cofre.VAULT_PATH.read_text(encoding="utf-8"))
                 f = cofre.desbloquear(vault, senha)
+                cofre.migrar_formato(vault, f)
                 return vault, f
             except ValueError as e:
                 return e
@@ -573,7 +574,7 @@ class CofreApp(ctk.CTk):
             }
             anterior = self.vault["entries"].get(nome)
             self.vault["entries"][nome] = cofre.montar_entrada(self.f, novo, anterior)
-            cofre.save_vault(self.vault)
+            cofre.save_vault(self.vault, self.f)
             self.selecionado = nome
             janela.destroy()
             self.atualizar_lista()
@@ -610,7 +611,7 @@ class CofreApp(ctk.CTk):
         if messagebox.askyesno("Apagar", f"Remover “{self.selecionado}” do cofre?"):
             nome = self.selecionado
             del self.vault["entries"][nome]
-            cofre.save_vault(self.vault)
+            cofre.save_vault(self.vault, self.f)
             self.selecionado = None
             self.detalhes_vazio(mensagem="Nenhuma entrada selecionada.")
             self.atualizar_lista()
@@ -657,7 +658,7 @@ class CofreApp(ctk.CTk):
                 self.vault["entries"][nome] = cofre.montar_entrada(self.f, e)
                 existentes.add(nome)
                 importadas += 1
-            cofre.save_vault(self.vault)
+            cofre.save_vault(self.vault, self.f)
             return importadas, puladas
 
         def ao_terminar(resultado):

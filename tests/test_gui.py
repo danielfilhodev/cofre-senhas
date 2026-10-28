@@ -60,7 +60,7 @@ def app(tmp_path, monkeypatch):
     ]:
         vault["entries"][nome] = main.montar_entrada(
             f, {"username": user, "url": url, "password": pw, "notes": ""})
-    main.save_vault(vault)
+    main.save_vault(vault, f)
 
     janela = gui.CofreApp()
     janela.update()
@@ -217,3 +217,27 @@ def test_travar_esvazia_as_linhas(app):
     assert _linhas_visiveis(janela)
     janela.travar()
     assert _linhas_visiveis(janela) == []
+
+
+def test_entrar_converte_cofre_antigo(app, tmp_path):
+    """A janela destrava um cofre da versão 1 e já o regrava todo cifrado."""
+    import json
+
+    janela, main, gui, vault, f = app
+    antigo = {"version": 1, "kdf": vault["kdf"], "verifier": vault["verifier"],
+              "entries": vault["entries"]}
+    main.VAULT_PATH.write_text(json.dumps(antigo), encoding="utf-8")
+
+    janela.entry_master.insert(0, MASTER)
+    janela.entrar()
+    for _ in range(400):           # espera a thread do PBKDF2 terminar
+        janela.update()
+        if janela.vault is not None:
+            break
+        janela.after(25)
+    assert janela.vault is not None, "não destravou"
+    assert set(janela.vault["entries"]) == {"GitHub", "Google", "mistral"}
+
+    texto = main.VAULT_PATH.read_text(encoding="utf-8")
+    assert json.loads(texto)["version"] == 2
+    assert "beltrano" not in texto and "GitHub" not in texto

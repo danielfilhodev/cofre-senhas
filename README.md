@@ -33,8 +33,8 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 
 | O que | Por quê | Onde baixar |
 |---|---|---|
-| **Python 3.10 ou mais novo** | é a linguagem do app | [python.org/downloads](https://www.python.org/downloads/) |
-| **uv** (recomendado) | instala as dependências em 1 comando | veja abaixo |
+| **Python 3.13 ou mais novo** | é a linguagem do app (com o uv, nem precisa: ele baixa a versão certa sozinho) | [python.org/downloads](https://www.python.org/downloads/) |
+| **uv** (recomendado) | instala o Python e as dependências em 1 comando | veja abaixo |
 
 **Para instalar o uv** (escolha o seu sistema):
 
@@ -59,7 +59,7 @@ python3 --version    # Linux/macOS
 python --version     # Windows
 ```
 
-Se aparecer `Python 3.10...` ou maior, está pronto. Se der "comando não encontrado", instale em [python.org](https://www.python.org/downloads/).
+Se aparecer `Python 3.13...` ou maior, está pronto. Se der "comando não encontrado", instale em [python.org](https://www.python.org/downloads/).
 
 ---
 
@@ -141,6 +141,10 @@ Nesse caso troque `uv run main.py` por `.venv/bin/python main.py`
 Siga na ordem. O que está depois do `#` em cada linha é uma explicação.
 
 ### Passo 1 — Criar o cofre (rode **uma única vez**)
+
+> Usando a [interface gráfica](#5-interface-gráfica-sem-terminal) ou o `.exe`,
+> não precisa deste comando: na primeira vez a janela já abre na tela
+> **"Criar seu cofre"**.
 
 ```bash
 uv run main.py init
@@ -302,6 +306,11 @@ uv run gui.py
 
 ![Janela principal do cofre](docs/tela-principal.png)
 
+**Primeira vez:** se ainda não existe cofre, a janela abre na tela **"Criar
+seu cofre"**. Digite a senha mestra duas vezes (mínimo de 8 caracteres) e
+clique em *Criar cofre*. Ele já abre vazio, pronto para usar, sem passar pelo
+terminal.
+
 O que dá para fazer na janela:
 
 | Na tela | O que faz |
@@ -310,8 +319,9 @@ O que dá para fazer na janela:
 | **Buscar** | filtra por nome, usuário ou url enquanto você digita |
 | **Lista à esquerda** | clique numa entrada para ver os detalhes |
 | **Mostrar / Copiar** | revela a senha ou cola na área de transferência (limpa em 30 s) |
-| **Adicionar / Editar / Gerar senha / Apagar** | botões embaixo dos detalhes |
-| **Importar CSV…** | o mesmo import do terminal, com escolha de arquivo e confirmação |
+| **＋ Nova entrada ▾** | menu no topo: preencher manualmente ou criar com senha forte gerada |
+| **📥 Importar CSV…** | botão próprio no topo: o mesmo import do terminal, com escolha de arquivo e confirmação |
+| **Editar / Apagar** | aparecem embaixo dos detalhes quando uma entrada está selecionada |
 | **Travar** | volta para a tela de senha na hora |
 
 **Requisitos:** a interface usa `tkinter`, que vem junto com a maioria dos
@@ -337,6 +347,43 @@ traz a interface em todos os sistemas (`python gui.py`).
 
 O terminal continua sendo dono das funções de automação (`get --raw`,
 `import --dry-run`, uso em scripts) — a janela é para o dia a dia.
+
+### Versão portátil (pendrive, sem instalar nada)
+
+Dá para gerar um **único `CofreSenhas.exe`** que roda em qualquer Windows sem
+Python, sem uv e sem terminal: é só dar dois cliques.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1
+```
+
+O arquivo sai em `dist\CofreSenhas.exe`. Copie para o pendrive. No primeiro
+uso ele mostra a tela **"Criar seu cofre"** e cria a pasta **`cofre_dados`**
+ao lado do `.exe`, e é ali que o cofre fica. Assim o programa e as senhas viajam juntos:
+
+```
+E:\
+├── CofreSenhas.exe
+└── cofre_dados\
+    └── vault.json
+```
+
+- Para levar um cofre que você já tem, copie o `vault.json` de
+  `C:\Users\voce\.cofre_senhas\` para `cofre_dados\` no pendrive.
+- O `.exe` só roda no sistema em que foi gerado (gere no Windows para Windows,
+  no macOS para macOS etc.).
+- Perder o pendrive não entrega as senhas a ninguém: sem a senha mestra o
+  `vault.json` não abre. Ainda assim, **faça backup** dele em outro lugar.
+- Alguns antivírus desconfiam de executáveis gerados pelo PyInstaller. Se o
+  Windows mostrar o aviso "O Windows protegeu o computador", clique em
+  *Mais informações → Executar assim mesmo*.
+
+**Atualizações de segurança do `.exe`:** o executável leva dentro uma cópia
+fixa do Python e das bibliotecas da hora em que foi gerado. Atualizar o Python
+do computador não muda nada nele. Para pegar correções, atualize a versão em
+`.python-version` (o projeto fixa a versão exata, hoje `3.13.15`), rode o
+`build.ps1` de novo e troque o `.exe` no pendrive. O cofre (`cofre_dados\`)
+não é afetado.
 
 ---
 
@@ -438,7 +485,11 @@ com `add` — de site em site.
 | Windows | `C:\Users\voce\.cofre_senhas\vault.json` |
 
 - Em Linux/macOS a pasta tem permissão `700` e o arquivo `600` (só o seu usuário lê).
-- O arquivo é **ilegível sem a senha mestra**: é só texto embaralhado.
+- O arquivo é **ilegível sem a senha mestra**: é só texto embaralhado. Nem os
+  nomes das entradas, usuários, sites ou notas aparecem, só um bloco cifrado.
+- Cofres criados em versões antigas (que deixavam nome, usuário, url e notas
+  legíveis) são convertidos sozinhos na primeira vez que você os destrava.
+- Na [versão portátil](#versão-portátil-pendrive-sem-instalar-nada) o cofre fica em `cofre_dados` ao lado do `.exe`.
 - O caminho pode ser mudado definindo a variável de ambiente `COFRE_DIR`.
 
 **Backup (muito importante):**
@@ -552,8 +603,13 @@ Para quem quer conferir antes de confiar:
   manual do arquivo invalida a leitura.
 - **Verificador:** um bloco cifrado de conteúdo conhecido detecta senha mestra
   errada sem vazar informação nenhuma.
-- **Armazenamento:** JSON, sem metadados sensíveis. Cada senha de entrada é um
-  token Fernet individual.
+- **Armazenamento:** JSON com só quatro campos: `version`, `kdf` (salt e
+  iterações), `verifier` e `data`. Todo o conteúdo do cofre (nomes, usuários,
+  urls, notas e senhas) fica dentro de `data`, um único token Fernet. Dentro
+  dele, cada senha ainda é um token Fernet próprio, então destravar o cofre não
+  deixa as senhas decifradas na memória até você pedir para ver uma.
+- **Migração:** cofres da versão 1 (só a senha cifrada) abrem normalmente e são
+  regravados na versão 2 ao destravar.
 - **Importação:** o CSV é lido com detecção de codificação (UTF-8 com/sem BOM,
   latin-1) e de separador (`,` `;` tab); as colunas são reconhecidas por sinônimos.
   O arquivo é lido localmente — nada vai para a rede.

@@ -60,7 +60,7 @@ def app(tmp_path, monkeypatch):
     ]:
         vault["entries"][nome] = main.montar_entrada(
             f, {"username": user, "url": url, "password": pw, "notes": ""})
-    main.save_vault(vault)
+    main.save_vault(vault, f)
 
     janela = gui.CofreApp()
     janela.update()
@@ -175,3 +175,182 @@ def test_adicionar_e_apagar_via_ui(app):
     # a ação de apagar abre caixa de confirmação nativa (bloqueia o teste);
     # cobrimos ela pelo caminho da lógica em tests/test_cofre.py
     assert callable(janela.apagar) and callable(janela.editar)
+
+
+def test_lista_grande_cria_so_as_linhas_da_tela(app):
+    """Com muitas entradas, só existem botões para o que cabe na tela."""
+    janela, main, gui, vault, f = app
+    janela.vault = {"entries": {f"site{i:04d}": {"username": f"u{i}"} for i in range(800)}}
+    janela.f = f
+    janela.main_view.tkraise()
+    janela.atualizar_lista()
+
+    linhas = _linhas_visiveis(janela)
+    assert linhas[0] == "site0000"
+    assert len(janela.lista.winfo_children()) < 30
+    assert "800 entrada(s)" in janela.lbl_total.cget("text")
+
+    # rolar troca o conteúdo das linhas, sem criar widgets novos
+    janela._rolar_barra("moveto", 0.5)
+    assert _linhas_visiveis(janela)[0] == "site0400"
+    assert len(janela.lista.winfo_children()) < 30
+
+    # rolar até o fim mostra a última entrada
+    janela._rolar_barra("moveto", 1.0)
+    assert _linhas_visiveis(janela)[-1] == "site0799"
+
+
+def test_selecionar_entrada_fora_da_tela_rola_ate_ela(app):
+    janela, main, gui, vault, f = app
+    janela.vault = {"entries": {f"site{i:04d}": {"username": ""} for i in range(300)}}
+    janela.atualizar_lista()
+    janela.update()
+    janela.selecionado = "site0250"
+    janela._destacar()   # o que selecionar() faz com a lista
+    assert "site0250" in _linhas_visiveis(janela)
+
+
+def test_travar_esvazia_as_linhas(app):
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.atualizar_lista()
+    assert _linhas_visiveis(janela)
+    janela.travar()
+    assert _linhas_visiveis(janela) == []
+
+
+def test_entrar_converte_cofre_antigo(app, tmp_path):
+    """A janela destrava um cofre da versão 1 e já o regrava todo cifrado."""
+    import json
+
+    janela, main, gui, vault, f = app
+    antigo = {"version": 1, "kdf": vault["kdf"], "verifier": vault["verifier"],
+              "entries": vault["entries"]}
+    main.VAULT_PATH.write_text(json.dumps(antigo), encoding="utf-8")
+
+    janela.entry_master.insert(0, MASTER)
+    janela.entrar()
+    for _ in range(400):           # espera a thread do PBKDF2 terminar
+        janela.update()
+        if janela.vault is not None:
+            break
+        janela.after(25)
+    assert janela.vault is not None, "não destravou"
+    assert set(janela.vault["entries"]) == {"GitHub", "Google", "mistral"}
+
+    texto = main.VAULT_PATH.read_text(encoding="utf-8")
+    assert json.loads(texto)["version"] == 2
+    assert "beltrano" not in texto and "GitHub" not in texto
+
+
+def test_editar_e_apagar_so_com_selecao(app):
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.main_view.tkraise()
+    janela.atualizar_lista()
+    janela.update()
+    assert not janela.acoes_entrada.winfo_ismapped()   # nada selecionado
+
+    janela.selecionar("GitHub")
+    janela.update()
+    assert janela.acoes_entrada.winfo_ismapped()
+
+    janela.travar()
+    janela.update()
+    assert not janela.acoes_entrada.winfo_manager()
+
+
+def test_menu_nova_entrada(app, monkeypatch):
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.main_view.tkraise()
+    janela.update()
+    assert not janela.menu_novo_aberto()
+
+    janela.alternar_menu_novo()
+    janela.update()
+    assert janela.menu_novo_aberto()
+    textos = [b.cget("text").split("\n")[0] for b in janela._opcoes_menu_novo]
+    assert any("manualmente" in t for t in textos)
+    assert any("senha forte" in t for t in textos)
+    assert not any("Importar" in t for t in textos)   # importar tem botão próprio
+    assert "Importar" in janela.btn_importar.cget("text")
+    assert janela.btn_importar.winfo_ismapped()
+
+    # escolher uma opção fecha o menu e chama a ação
+    chamadas = []
+    monkeypatch.setattr(janela, "adicionar", lambda: chamadas.append("adicionar"))
+    janela._escolher_no_menu(lambda: janela.adicionar())
+    janela.update()
+    assert chamadas == ["adicionar"]
+    assert not janela.menu_novo_aberto()
+
+    # clicar de novo no botão abre; clicar outra vez fecha
+    janela.alternar_menu_novo()
+    janela.alternar_menu_novo()
+    assert not janela.menu_novo_aberto()
+
+
+@pytest.fixture()
+def app_sem_cofre(tmp_path, monkeypatch):
+    """Primeiro uso: a pasta do cofre ainda não existe."""
+    monkeypatch.setenv("COFRE_DIR", str(tmp_path / "novo"))
+    sys.modules.pop("main", None)
+    sys.modules.pop("gui", None)
+    main = importlib.import_module("main")
+    gui = importlib.import_module("gui")
+    janela = gui.CofreApp()
+    janela.update()
+    yield janela, main
+    try:
+        janela.destroy()
+    except Exception:
+        pass
+
+
+def _esperar(janela, condicao, vezes=400):
+    for _ in range(vezes):          # o PBKDF2 roda numa thread
+        janela.update()
+        if condicao():
+            return True
+        janela.after(25)
+    return False
+
+
+def test_primeiro_uso_mostra_tela_de_criar(app_sem_cofre):
+    janela, main = app_sem_cofre
+    janela.update()
+    assert janela.criar_view.winfo_ismapped()
+    assert janela.btn_criar.cget("text") == "Criar cofre"
+    assert str(main.VAULT_PATH) in janela.lbl_caminho.cget("text")
+
+
+def test_criar_valida_tamanho_e_confirmacao(app_sem_cofre):
+    janela, main = app_sem_cofre
+    janela.entry_nova.insert(0, "curta")
+    janela.entry_confirma.insert(0, "curta")
+    janela.criar()
+    assert "pelo menos" in janela.lbl_criar_erro.cget("text")
+
+    janela.entry_nova.delete(0, "end")
+    janela.entry_nova.insert(0, "uma-frase-bem-longa")
+    janela.criar()
+    assert "não conferem" in janela.lbl_criar_erro.cget("text")
+    assert not main.VAULT_PATH.exists()
+
+
+def test_criar_cofre_pela_janela(app_sem_cofre):
+    janela, main = app_sem_cofre
+    janela.entry_nova.insert(0, MASTER)
+    janela.entry_confirma.insert(0, MASTER)
+    janela.criar()
+    assert _esperar(janela, lambda: janela.vault is not None), "não criou"
+    assert main.VAULT_PATH.exists()
+    assert janela.vault["entries"] == {}
+    assert janela.entry_nova.get() == "" and janela.entry_confirma.get() == ""
+
+    # o cofre criado abre com a mesma senha
+    import json
+    dados = json.loads(main.VAULT_PATH.read_text(encoding="utf-8"))
+    main.desbloquear(dados, MASTER)
+    assert dados["entries"] == {}

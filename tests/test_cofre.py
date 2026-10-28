@@ -46,7 +46,10 @@ def vault(tmp_path: Path) -> Path:
 
 
 def vault_json(vault: Path) -> dict:
-    return json.loads((vault / "vault.json").read_text(encoding="utf-8"))
+    """Conteúdo do cofre já destravado (o arquivo em si é todo cifrado)."""
+    dados = json.loads((vault / "vault.json").read_text(encoding="utf-8"))
+    load_main().desbloquear(dados, MASTER)
+    return dados
 
 
 def add(vault: Path, name: str, senha: str, *extra: str) -> subprocess.CompletedProcess:
@@ -347,3 +350,68 @@ def test_get_copy_comportamento(vault: Path):
     else:
         assert p.returncode == 1
         assert "área de transferência" in p.stderr
+
+
+def test_pasta_padrao_portatil_ao_lado_do_exe(monkeypatch, tmp_path: Path):
+    mod = load_main()
+    exe = tmp_path / "pendrive" / "CofreSenhas.exe"
+    monkeypatch.setattr(mod.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(mod.sys, "executable", str(exe))
+    assert mod._pasta_padrao() == exe.resolve().parent / "cofre_dados"
+
+
+def test_pasta_padrao_sem_empacotar_fica_na_home(monkeypatch):
+    mod = load_main()
+    monkeypatch.delattr(mod.sys, "frozen", raising=False)
+    assert mod._pasta_padrao() == Path.home() / ".cofre_senhas"
+
+
+# ------------------------------------------------- formato todo cifrado (v2)
+def test_arquivo_nao_mostra_nada_as_claras(vault: Path):
+    p = add(vault, "Banco-Secreto", "Senha-Do-Banco-9", "--username", "fulano.da.silva",
+            "--url", "https://meubanco.example", "--notes", "pergunta: nome do cachorro")
+    assert p.returncode == 0, p.stderr
+    texto = (vault / "vault.json").read_text(encoding="utf-8")
+    for segredo in ("Banco-Secreto", "fulano.da.silva", "meubanco", "cachorro", "Senha-Do-Banco-9"):
+        assert segredo not in texto
+    assert set(json.loads(texto)) == {"version", "kdf", "verifier", "data"}
+    assert json.loads(texto)["version"] == 2
+    assert vault_json(vault)["entries"]["Banco-Secreto"]["username"] == "fulano.da.silva"
+
+
+def test_cofre_antigo_e_convertido_ao_destravar(tmp_path: Path):
+    """Cofre da versão 1 (só a senha cifrada) continua abrindo e é regravado cifrado."""
+    mod = load_main()
+    v = tmp_path / "vault"
+    v.mkdir()
+    salt = b"\x03" * 16
+    f = mod.Fernet(mod.derive_key(MASTER, salt))
+    antigo = {
+        "version": 1,
+        "kdf": {"name": "pbkdf2-hmac-sha256", "iterations": mod.KDF_ITERATIONS, "salt": list(salt)},
+        "verifier": f.encrypt(b"cofre-senhas-ok").decode(),
+        "entries": {"Antigo": mod.montar_entrada(
+            f, {"username": "usuario.antigo", "url": "", "password": "senha-antiga-1", "notes": ""})},
+    }
+    (v / "vault.json").write_text(json.dumps(antigo), encoding="utf-8")
+
+    p = run(["get", "Antigo", "--raw"], vault=v, stdin=f"{MASTER}\n")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == "senha-antiga-1"
+    assert "convertido" in p.stderr
+
+    texto = (v / "vault.json").read_text(encoding="utf-8")
+    assert "usuario.antigo" not in texto and "Antigo" not in texto
+    assert json.loads(texto)["version"] == 2
+    assert vault_json(v)["entries"]["Antigo"]["username"] == "usuario.antigo"
+
+
+def test_bloco_adulterado_erro_claro(vault: Path):
+    add(vault, "GitHub", "SenhaForte1!")
+    caminho = vault / "vault.json"
+    dados = json.loads(caminho.read_text(encoding="utf-8"))
+    dados["data"] = dados["data"][:-8] + "AAAAAAAA"
+    caminho.write_text(json.dumps(dados), encoding="utf-8")
+    p = run(["list"], vault=vault, stdin=f"{MASTER}\n")
+    assert p.returncode != 0
+    assert "adulterado" in p.stderr

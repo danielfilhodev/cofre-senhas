@@ -36,9 +36,17 @@ from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
-VAULT_DIR = Path(os.environ.get("COFRE_DIR", Path.home() / ".cofre_senhas"))
+def _pasta_padrao() -> Path:
+    """Executável empacotado (pendrive): cofre ao lado do .exe; senão, na home."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "cofre_dados"
+    return Path.home() / ".cofre_senhas"
+
+
+VAULT_DIR = Path(os.environ.get("COFRE_DIR", _pasta_padrao()))
 VAULT_PATH = VAULT_DIR / "vault.json"
 KDF_ITERATIONS = 600_000
+VAULT_VERSION = 2  # 1: só as senhas cifradas; 2: o conteúdo todo num bloco cifrado
 _verifier = b"cofre-senhas-ok"  # valor conhecido p/ detectar senha mestra errada
 
 
@@ -85,7 +93,8 @@ def load_vault() -> dict:
 
 
 def desbloquear(vault: dict, master: str) -> Fernet:
-    """Devolve o Fernet destravado. Levanta ValueError se a senha estiver errada."""
+    """Devolve o Fernet destravado e preenche `vault["entries"]` decifrando o
+    bloco `data`. Levanta ValueError se a senha estiver errada."""
     salt = bytes(vault["kdf"]["salt"])
     key = derive_key(master, salt, vault["kdf"]["iterations"])
     f = Fernet(key)
@@ -93,27 +102,55 @@ def desbloquear(vault: dict, master: str) -> Fernet:
         f.decrypt(vault["verifier"].encode())
     except InvalidToken as e:
         raise ValueError("senha mestra incorreta") from e
+    if "data" in vault:
+        try:
+            vault["entries"] = json.loads(f.decrypt(vault["data"].encode()))
+        except InvalidToken as e:
+            raise ValueError("cofre corrompido ou adulterado (o bloco de dados não confere)") from e
+        del vault["data"]
+    vault.setdefault("entries", {})
     return f
+
+
+def migrar_formato(vault: dict, f: Fernet) -> bool:
+    """Cofre da versão 1 (nomes, usuários, urls e notas às claras no arquivo):
+    regrava já no formato todo cifrado. Devolve True se converteu."""
+    if vault.get("version", 1) >= VAULT_VERSION:
+        return False
+    save_vault(vault, f)
+    return True
 
 
 def unlock(vault: dict) -> Fernet:
     try:
         return desbloquear(vault, ask_master())
-    except ValueError:
-        die("senha mestra incorreta")
+    except ValueError as e:
+        die(str(e))
 
 
-def save_vault(vault: dict) -> None:
+def save_vault(vault: dict, f: Fernet) -> None:
+    """Grava o cofre com todas as entradas num único bloco cifrado: no arquivo
+    só ficam os parâmetros da chave, o verificador e o bloco `data`."""
     VAULT_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    vault["version"] = VAULT_VERSION
+    em_disco = {
+        "version": VAULT_VERSION,
+        "kdf": vault["kdf"],
+        "verifier": vault["verifier"],
+        "data": f.encrypt(json.dumps(vault["entries"], ensure_ascii=False).encode()).decode(),
+    }
     tmp = VAULT_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(vault, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(em_disco, indent=2), encoding="utf-8")
     os.chmod(tmp, 0o600)
     tmp.replace(VAULT_PATH)
 
 
 def unlock_existing() -> tuple[dict, Fernet]:
     vault = load_vault()
-    return vault, unlock(vault)
+    f = unlock(vault)
+    if migrar_formato(vault, f):
+        print("cofre convertido para o formato todo criptografado", file=sys.stderr)
+    return vault, f
 
 
 def _achar_nome(entries: dict, nome: str) -> str | None:
@@ -176,20 +213,27 @@ def _ler_area_transferencia() -> str | None:
 
 
 # ------------------------------------------------------------------ comandos
-def cmd_init(_args) -> None:
+def criar_cofre(master: str) -> tuple[dict, Fernet]:
+    """Cria e grava um cofre vazio. Levanta FileExistsError se já existir."""
     if VAULT_PATH.exists():
-        die(f"cofre já existe em {VAULT_PATH}")
-    master = ask_master(confirm=True)
+        raise FileExistsError(f"cofre já existe em {VAULT_PATH}")
     salt = secrets.token_bytes(16)
     key = derive_key(master, salt)
     f = Fernet(key)
     vault = {
-        "version": 1,
+        "version": VAULT_VERSION,
         "kdf": {"name": "pbkdf2-hmac-sha256", "iterations": KDF_ITERATIONS, "salt": list(salt)},
         "verifier": f.encrypt(_verifier).decode(),
         "entries": {},
     }
-    save_vault(vault)
+    save_vault(vault, f)
+    return vault, f
+
+
+def cmd_init(_args) -> None:
+    if VAULT_PATH.exists():
+        die(f"cofre já existe em {VAULT_PATH}")
+    criar_cofre(ask_master(confirm=True))
     print(f"cofre criado em {VAULT_PATH}")
 
 
@@ -240,7 +284,7 @@ def cmd_add(args) -> None:
     existing = vault["entries"].get(args.name)
     entry = montar_entrada(f, _entry_fields(args, existing), existing)
     vault["entries"][args.name] = entry
-    save_vault(vault)
+    save_vault(vault, f)
     print(f"{'atualizada' if existing else 'salva'}: {args.name}")
 
 
@@ -312,7 +356,7 @@ def cmd_del(args) -> None:
             print("cancelado")
             return
     del vault["entries"][nome]
-    save_vault(vault)
+    save_vault(vault, f)
     print(f"removida: {nome}")
 
 
@@ -460,7 +504,7 @@ def cmd_import(args) -> None:
             atualizadas += 1
         else:
             importadas += 1
-    save_vault(vault)
+    save_vault(vault, f)
 
     print(f"\nimportadas:    {importadas}")
     if atualizadas:
@@ -504,7 +548,7 @@ def cmd_passwd(_args) -> None:
         entry["password"] = new_f.encrypt(pw).decode()
     vault["kdf"] = {"name": "pbkdf2-hmac-sha256", "iterations": KDF_ITERATIONS, "salt": list(salt)}
     vault["verifier"] = new_f.encrypt(_verifier).decode()
-    save_vault(vault)
+    save_vault(vault, new_f)
     print("senha mestra alterada")
 
 

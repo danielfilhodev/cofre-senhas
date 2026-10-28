@@ -11,6 +11,20 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 > **Em 3 linhas:** você cria um cofre com uma senha mestra, guarda quantas senhas quiser
 > dentro dele, e usa a senha mestra para abrir e ver o que está lá.
 
+## ⬇️ Só quero usar (Windows, sem instalar nada)
+
+1. Baixe o **[CofreSenhas.exe](https://github.com/danielfilhodev/cofre-senhas/releases/latest/download/CofreSenhas.exe)**
+   (ou veja todas as versões na página de [Releases](https://github.com/danielfilhodev/cofre-senhas/releases)).
+2. Copie para onde quiser: uma pasta do PC ou um **pendrive**.
+3. Dê dois cliques. Na primeira vez ele abre a tela **"Criar seu cofre"**.
+
+Não precisa de Python, uv nem terminal. O cofre fica na pasta `cofre_dados`
+criada ao lado do `.exe`, então programa e senhas andam juntos. Mais detalhes
+em [Versão portátil](#versão-portátil-pendrive-sem-instalar-nada).
+
+O resto deste guia é para quem quer rodar pelo código-fonte, usar no terminal
+ou no Linux/macOS.
+
 ---
 
 ## Sumário
@@ -350,16 +364,31 @@ O terminal continua sendo dono das funções de automação (`get --raw`,
 
 ### Versão portátil (pendrive, sem instalar nada)
 
-Dá para gerar um **único `CofreSenhas.exe`** que roda em qualquer Windows sem
-Python, sem uv e sem terminal: é só dar dois cliques.
+É um **único `CofreSenhas.exe`** que roda em qualquer Windows sem Python, sem
+uv e sem terminal: é só dar dois cliques.
+
+**Opção 1: baixar pronto (recomendado).** Baixe o
+[CofreSenhas.exe da última versão](https://github.com/danielfilhodev/cofre-senhas/releases/latest/download/CofreSenhas.exe).
+Ele é gerado automaticamente pela CI do GitHub a cada versão nova, depois de
+passar em todos os testes. Para conferir que o download não foi alterado,
+compare com o arquivo `CofreSenhas.exe.sha256` da mesma
+[página de Releases](https://github.com/danielfilhodev/cofre-senhas/releases):
+
+```powershell
+Get-FileHash .\CofreSenhas.exe -Algorithm SHA256
+```
+
+**Opção 2: gerar você mesmo** a partir do código (precisa do uv):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-O arquivo sai em `dist\CofreSenhas.exe`. Copie para o pendrive. No primeiro
-uso ele mostra a tela **"Criar seu cofre"** e cria a pasta **`cofre_dados`**
-ao lado do `.exe`, e é ali que o cofre fica. Assim o programa e as senhas viajam juntos:
+O arquivo sai em `dist\CofreSenhas.exe`.
+
+Copie o `.exe` para o pendrive. No primeiro uso ele mostra a tela **"Criar
+seu cofre"** e cria a pasta **`cofre_dados`** ao lado do `.exe`, e é ali que
+o cofre fica. Assim o programa e as senhas viajam juntos:
 
 ```
 E:\
@@ -380,10 +409,11 @@ E:\
 
 **Atualizações de segurança do `.exe`:** o executável leva dentro uma cópia
 fixa do Python e das bibliotecas da hora em que foi gerado. Atualizar o Python
-do computador não muda nada nele. Para pegar correções, atualize a versão em
-`.python-version` (o projeto fixa a versão exata, hoje `3.13.15`), rode o
-`build.ps1` de novo e troque o `.exe` no pendrive. O cofre (`cofre_dados\`)
-não é afetado.
+do computador não muda nada nele. Para pegar correções, baixe o `.exe` da
+versão mais nova na página de Releases e troque o arquivo no pendrive. O cofre
+(`cofre_dados\`) não é afetado. Para quem mantém o projeto: atualize a versão
+em `.python-version` (o projeto fixa a versão exata, hoje `3.13.15`) e publique
+uma versão nova (veja [Publicar uma versão](#publicar-uma-versão)).
 
 ---
 
@@ -656,6 +686,21 @@ A **GitHub Actions** (`.github/workflows/ci.yml`) tem dois jobs em **Linux,
 Windows e macOS** a cada push na `main` e a cada pull request: o de CLI (uv) e
 o de UI (Python do `actions/setup-python`, que vem com `tkinter`; no Linux sob
 `xvfb`). Um PR só deve ser mesclado com a CI verde.
+
+### Publicar uma versão
+
+O `.github/workflows/release.yml` gera o `.exe` e publica na página de
+Releases sempre que uma tag `v*` chega ao GitHub:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Ele roda os testes, gera o `CofreSenhas.exe` com o Python fixado em
+`.python-version`, calcula o SHA-256 e cria a release com os dois arquivos e
+as notas geradas a partir dos PRs. Rodando o workflow à mão (*Actions →
+Release → Run workflow*), ele só gera o `.exe` como artefato, sem publicar.
 
 ---
 

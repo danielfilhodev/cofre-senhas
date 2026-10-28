@@ -6,9 +6,7 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 - Tudo fica guardado num único arquivo, **trancado com uma senha mestra** que só você conhece.
 - Funciona em **Linux, macOS e Windows**.
 - **Importa de uma vez** as senhas que já estão salvas no Chrome, Edge, Brave ou Firefox.
-
-> **Em 3 linhas:** você cria um cofre com uma senha mestra, guarda quantas senhas quiser
-> dentro dele, e usa a senha mestra para abrir e ver o que está lá.
+- Você cria um cofre com uma senha mestra, guarda quantas senhas quiser dentro dele, e usa a senha mestra para abrir e ver o que está lá.
 
 ## ⬇️ Só quero usar (Windows, sem instalar nada)
 

@@ -26,6 +26,7 @@ ctk.set_default_color_theme("dark-blue")
 FONTE_TITULO: ctk.CTkFont | None = None
 FONTE_NORMAL: ctk.CTkFont | None = None
 FONTE_PEQUENA: ctk.CTkFont | None = None
+MIN_MESTRA = 8   # tamanho mínimo da senha mestra ao criar o cofre pela janela
 
 
 def _alinhar_esquerda(btn: ctk.CTkButton) -> None:
@@ -68,8 +69,13 @@ class CofreApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         self._montar_login()
+        self._montar_criacao()
         self._montar_principal()
-        self.login_view.tkraise()
+        if cofre.VAULT_PATH.exists():
+            self.login_view.tkraise()
+        else:   # primeiro uso: cria o cofre aqui mesmo, sem terminal
+            self.criar_view.tkraise()
+            self.entry_nova.focus_set()
 
     # ------------------------------------------------------------ telas
     def _montar_login(self) -> None:
@@ -98,10 +104,74 @@ class CofreApp(ctk.CTk):
                                            font=FONTE_PEQUENA, wraplength=320)
         self.lbl_login_erro.grid(row=4, column=0, padx=30, pady=(0, 18))
 
-        if not cofre.VAULT_PATH.exists():
-            self.lbl_login_erro.configure(
-                text=f"Cofre ainda não existe.\nCrie no terminal:  uv run main.py init",
-                text_color="#ffd166")
+    def _montar_criacao(self) -> None:
+        """Tela do primeiro uso: define a senha mestra e cria o cofre vazio."""
+        self.criar_view = ctk.CTkFrame(self, fg_color="transparent")
+        self.criar_view.grid(row=0, column=0, sticky="nsew")
+        caixa = ctk.CTkFrame(self.criar_view, corner_radius=20)
+        caixa.place(relx=0.5, rely=0.5, anchor="center")
+        caixa.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(caixa, text="🔐 Criar seu cofre", font=FONTE_TITULO).grid(
+            row=0, column=0, padx=30, pady=(30, 4))
+        ctk.CTkLabel(
+            caixa, text="Escolha uma senha mestra. Ela abre o cofre e\n"
+                        "é a única senha que você vai precisar decorar.",
+            font=FONTE_NORMAL, text_color="#9aa4b2", justify="center").grid(
+            row=1, column=0, padx=30)
+
+        self.entry_nova = ctk.CTkEntry(caixa, placeholder_text=f"Senha mestra (mín. {MIN_MESTRA} caracteres)",
+                                       show="*", width=320, height=40)
+        self.entry_nova.grid(row=2, column=0, padx=30, pady=(22, 8))
+        self.entry_nova.bind("<Return>", lambda _e: self.entry_confirma.focus_set())
+        self.entry_confirma = ctk.CTkEntry(caixa, placeholder_text="Repita a senha mestra",
+                                           show="*", width=320, height=40)
+        self.entry_confirma.grid(row=3, column=0, padx=30, pady=(0, 10))
+        self.entry_confirma.bind("<Return>", lambda _e: self.criar())
+
+        ctk.CTkLabel(
+            caixa, text="⚠ Não existe \"esqueci a senha\": sem ela, ninguém\n"
+                        "(nem você) consegue abrir o cofre. Anote num papel.",
+            font=FONTE_PEQUENA, text_color="#ffd166", justify="center").grid(
+            row=4, column=0, padx=30, pady=(2, 10))
+
+        self.btn_criar = ctk.CTkButton(caixa, text="Criar cofre", height=40, width=320,
+                                       fg_color="#2f9e6e", hover_color="#26815b",
+                                       command=self.criar, font=FONTE_NORMAL)
+        self.btn_criar.grid(row=5, column=0, padx=30, pady=(4, 8))
+
+        self.lbl_criar_erro = ctk.CTkLabel(caixa, text="", text_color="#ff6b6b",
+                                           font=FONTE_PEQUENA, wraplength=320)
+        self.lbl_criar_erro.grid(row=6, column=0, padx=30)
+        self.lbl_caminho = ctk.CTkLabel(caixa, text=f"será salvo em: {cofre.VAULT_PATH}",
+                                        font=FONTE_PEQUENA, text_color="#6b7280", wraplength=340)
+        self.lbl_caminho.grid(row=7, column=0, padx=30, pady=(0, 22))
+
+    def criar(self) -> None:
+        senha, repetida = self.entry_nova.get(), self.entry_confirma.get()
+        if len(senha) < MIN_MESTRA:
+            self.lbl_criar_erro.configure(text=f"Use pelo menos {MIN_MESTRA} caracteres.")
+            return
+        if senha != repetida:
+            self.lbl_criar_erro.configure(text="As duas senhas não conferem.")
+            return
+        self.lbl_criar_erro.configure(text="")
+        self.btn_criar.configure(state="disabled", text="Criando…")
+
+        def ao_terminar(resultado):
+            self.btn_criar.configure(state="normal", text="Criar cofre")
+            if isinstance(resultado, Exception):
+                self.lbl_criar_erro.configure(text=f"Não consegui criar o cofre: {resultado}")
+                return
+            self.entry_nova.delete(0, "end")
+            self.entry_confirma.delete(0, "end")
+            self.vault, self.f = resultado
+            self.selecionado = None
+            self.main_view.tkraise()
+            self.atualizar_lista()
+            self.status(f"cofre criado em {cofre.VAULT_PATH}")
+
+        self._assinc(lambda: cofre.criar_cofre(senha), ao_terminar)
 
     def _montar_principal(self) -> None:
         self.main_view = ctk.CTkFrame(self, fg_color="transparent")
@@ -488,15 +558,16 @@ class CofreApp(ctk.CTk):
             self._destacar()
             if self.selecionado != self._detalhes_mostrados:
                 self._mostrar_detalhes()
-        elif self._detalhes_mostrados is not None:
-            if not self.vault["entries"]:
-                self.detalhes_vazio(mensagem="Cofre vazio — clique em “＋ Nova entrada” lá em cima.")
-            else:
-                self.detalhes_vazio()
+        else:
+            msg = ("Cofre vazio — clique em “＋ Nova entrada” lá em cima."
+                   if not self.vault["entries"] else "Selecione uma entrada ao lado 👈")
+            if self._detalhes_mostrados is not None or self._msg_vazio != msg:
+                self.detalhes_vazio(mensagem=msg)
 
     def detalhes_vazio(self, mensagem: str = "Selecione uma entrada ao lado 👈") -> None:
         self.selecionado = None
         self._detalhes_mostrados = None
+        self._msg_vazio = mensagem
         self._mostrar_acoes(False)
         for w in self.detalhes.winfo_children():
             w.destroy()

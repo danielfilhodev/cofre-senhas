@@ -142,6 +142,10 @@ Siga na ordem. O que está depois do `#` em cada linha é uma explicação.
 
 ### Passo 1 — Criar o cofre (rode **uma única vez**)
 
+> Usando a [interface gráfica](#5-interface-gráfica-sem-terminal) ou o `.exe`,
+> não precisa deste comando: na primeira vez a janela já abre na tela
+> **"Criar seu cofre"**.
+
 ```bash
 uv run main.py init
 ```
@@ -302,6 +306,11 @@ uv run gui.py
 
 ![Janela principal do cofre](docs/tela-principal.png)
 
+**Primeira vez:** se ainda não existe cofre, a janela abre na tela **"Criar
+seu cofre"**. Digite a senha mestra duas vezes (mínimo de 8 caracteres) e
+clique em *Criar cofre*. Ele já abre vazio, pronto para usar, sem passar pelo
+terminal.
+
 O que dá para fazer na janela:
 
 | Na tela | O que faz |
@@ -348,8 +357,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 O arquivo sai em `dist\CofreSenhas.exe`. Copie para o pendrive. No primeiro
-uso ele cria a pasta **`cofre_dados`** ao lado do `.exe`, e é ali que o cofre
-fica. Assim o programa e as senhas viajam juntos:
+uso ele mostra a tela **"Criar seu cofre"** e cria a pasta **`cofre_dados`**
+ao lado do `.exe`, e é ali que o cofre fica. Assim o programa e as senhas viajam juntos:
 
 ```
 E:\

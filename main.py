@@ -213,10 +213,10 @@ def _ler_area_transferencia() -> str | None:
 
 
 # ------------------------------------------------------------------ comandos
-def cmd_init(_args) -> None:
+def criar_cofre(master: str) -> tuple[dict, Fernet]:
+    """Cria e grava um cofre vazio. Levanta FileExistsError se já existir."""
     if VAULT_PATH.exists():
-        die(f"cofre já existe em {VAULT_PATH}")
-    master = ask_master(confirm=True)
+        raise FileExistsError(f"cofre já existe em {VAULT_PATH}")
     salt = secrets.token_bytes(16)
     key = derive_key(master, salt)
     f = Fernet(key)
@@ -227,6 +227,13 @@ def cmd_init(_args) -> None:
         "entries": {},
     }
     save_vault(vault, f)
+    return vault, f
+
+
+def cmd_init(_args) -> None:
+    if VAULT_PATH.exists():
+        die(f"cofre já existe em {VAULT_PATH}")
+    criar_cofre(ask_master(confirm=True))
     print(f"cofre criado em {VAULT_PATH}")
 
 

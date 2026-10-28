@@ -287,3 +287,68 @@ def test_menu_nova_entrada(app, monkeypatch):
     janela.alternar_menu_novo()
     janela.alternar_menu_novo()
     assert not janela.menu_novo_aberto()
+
+
+@pytest.fixture()
+def app_sem_cofre(tmp_path, monkeypatch):
+    """Primeiro uso: a pasta do cofre ainda não existe."""
+    monkeypatch.setenv("COFRE_DIR", str(tmp_path / "novo"))
+    sys.modules.pop("main", None)
+    sys.modules.pop("gui", None)
+    main = importlib.import_module("main")
+    gui = importlib.import_module("gui")
+    janela = gui.CofreApp()
+    janela.update()
+    yield janela, main
+    try:
+        janela.destroy()
+    except Exception:
+        pass
+
+
+def _esperar(janela, condicao, vezes=400):
+    for _ in range(vezes):          # o PBKDF2 roda numa thread
+        janela.update()
+        if condicao():
+            return True
+        janela.after(25)
+    return False
+
+
+def test_primeiro_uso_mostra_tela_de_criar(app_sem_cofre):
+    janela, main = app_sem_cofre
+    janela.update()
+    assert janela.criar_view.winfo_ismapped()
+    assert janela.btn_criar.cget("text") == "Criar cofre"
+    assert str(main.VAULT_PATH) in janela.lbl_caminho.cget("text")
+
+
+def test_criar_valida_tamanho_e_confirmacao(app_sem_cofre):
+    janela, main = app_sem_cofre
+    janela.entry_nova.insert(0, "curta")
+    janela.entry_confirma.insert(0, "curta")
+    janela.criar()
+    assert "pelo menos" in janela.lbl_criar_erro.cget("text")
+
+    janela.entry_nova.delete(0, "end")
+    janela.entry_nova.insert(0, "uma-frase-bem-longa")
+    janela.criar()
+    assert "não conferem" in janela.lbl_criar_erro.cget("text")
+    assert not main.VAULT_PATH.exists()
+
+
+def test_criar_cofre_pela_janela(app_sem_cofre):
+    janela, main = app_sem_cofre
+    janela.entry_nova.insert(0, MASTER)
+    janela.entry_confirma.insert(0, MASTER)
+    janela.criar()
+    assert _esperar(janela, lambda: janela.vault is not None), "não criou"
+    assert main.VAULT_PATH.exists()
+    assert janela.vault["entries"] == {}
+    assert janela.entry_nova.get() == "" and janela.entry_confirma.get() == ""
+
+    # o cofre criado abre com a mesma senha
+    import json
+    dados = json.loads(main.VAULT_PATH.read_text(encoding="utf-8"))
+    main.desbloquear(dados, MASTER)
+    assert dados["entries"] == {}

@@ -33,8 +33,8 @@ Um aplicativo em Python para **guardar suas senhas com segurança, direto no seu
 
 | O que | Por quê | Onde baixar |
 |---|---|---|
-| **Python 3.10 ou mais novo** | é a linguagem do app | [python.org/downloads](https://www.python.org/downloads/) |
-| **uv** (recomendado) | instala as dependências em 1 comando | veja abaixo |
+| **Python 3.13 ou mais novo** | é a linguagem do app (com o uv, nem precisa: ele baixa a versão certa sozinho) | [python.org/downloads](https://www.python.org/downloads/) |
+| **uv** (recomendado) | instala o Python e as dependências em 1 comando | veja abaixo |
 
 **Para instalar o uv** (escolha o seu sistema):
 
@@ -59,7 +59,7 @@ python3 --version    # Linux/macOS
 python --version     # Windows
 ```
 
-Se aparecer `Python 3.10...` ou maior, está pronto. Se der "comando não encontrado", instale em [python.org](https://www.python.org/downloads/).
+Se aparecer `Python 3.13...` ou maior, está pronto. Se der "comando não encontrado", instale em [python.org](https://www.python.org/downloads/).
 
 ---
 
@@ -367,6 +367,13 @@ E:\
 - Alguns antivírus desconfiam de executáveis gerados pelo PyInstaller. Se o
   Windows mostrar o aviso "O Windows protegeu o computador", clique em
   *Mais informações → Executar assim mesmo*.
+
+**Atualizações de segurança do `.exe`:** o executável leva dentro uma cópia
+fixa do Python e das bibliotecas da hora em que foi gerado. Atualizar o Python
+do computador não muda nada nele. Para pegar correções, atualize a versão em
+`.python-version` (o projeto fixa a versão exata, hoje `3.13.15`), rode o
+`build.ps1` de novo e troque o `.exe` no pendrive. O cofre (`cofre_dados\`)
+não é afetado.
 
 ---
 

@@ -1,0 +1,60 @@
+name: Release
+
+# Gera o CofreSenhas.exe portátil e publica na página de Releases.
+#   git tag v0.2.0 && git push origin v0.2.0
+# Rodando à mão (Actions → Release → Run workflow) só gera o .exe como
+# artefato, sem publicar nada.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exe-windows:
+    name: CofreSenhas.exe (Windows)
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      # .python-version fixa a versão exata do Python que vai dentro do .exe
+      - name: Instala dependências
+        run: uv sync --group build
+
+      - name: Roda a suíte de testes antes de empacotar
+        run: uv run pytest -q -rs
+
+      - name: Gera o .exe
+        run: powershell -ExecutionPolicy Bypass -File build.ps1
+
+      - name: Calcula o SHA-256 (para conferir o download)
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash dist/CofreSenhas.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  CofreSenhas.exe" | Out-File -Encoding ascii dist/CofreSenhas.exe.sha256
+          Get-Content dist/CofreSenhas.exe.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: CofreSenhas-windows
+          path: |
+            dist/CofreSenhas.exe
+            dist/CofreSenhas.exe.sha256
+
+      - name: Publica na página de Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/CofreSenhas.exe dist/CofreSenhas.exe.sha256 \
+            --title "Cofre de Senhas $GITHUB_REF_NAME" \
+            --generate-notes

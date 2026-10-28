@@ -175,3 +175,45 @@ def test_adicionar_e_apagar_via_ui(app):
     # a ação de apagar abre caixa de confirmação nativa (bloqueia o teste);
     # cobrimos ela pelo caminho da lógica em tests/test_cofre.py
     assert callable(janela.apagar) and callable(janela.editar)
+
+
+def test_lista_grande_cria_so_as_linhas_da_tela(app):
+    """Com muitas entradas, só existem botões para o que cabe na tela."""
+    janela, main, gui, vault, f = app
+    janela.vault = {"entries": {f"site{i:04d}": {"username": f"u{i}"} for i in range(800)}}
+    janela.f = f
+    janela.main_view.tkraise()
+    janela.atualizar_lista()
+
+    linhas = _linhas_visiveis(janela)
+    assert linhas[0] == "site0000"
+    assert len(janela.lista.winfo_children()) < 30
+    assert "800 entrada(s)" in janela.lbl_total.cget("text")
+
+    # rolar troca o conteúdo das linhas, sem criar widgets novos
+    janela._rolar_barra("moveto", 0.5)
+    assert _linhas_visiveis(janela)[0] == "site0400"
+    assert len(janela.lista.winfo_children()) < 30
+
+    # rolar até o fim mostra a última entrada
+    janela._rolar_barra("moveto", 1.0)
+    assert _linhas_visiveis(janela)[-1] == "site0799"
+
+
+def test_selecionar_entrada_fora_da_tela_rola_ate_ela(app):
+    janela, main, gui, vault, f = app
+    janela.vault = {"entries": {f"site{i:04d}": {"username": ""} for i in range(300)}}
+    janela.atualizar_lista()
+    janela.update()
+    janela.selecionado = "site0250"
+    janela._destacar()   # o que selecionar() faz com a lista
+    assert "site0250" in _linhas_visiveis(janela)
+
+
+def test_travar_esvazia_as_linhas(app):
+    janela, main, gui, vault, f = app
+    janela.vault, janela.f = vault, f
+    janela.atualizar_lista()
+    assert _linhas_visiveis(janela)
+    janela.travar()
+    assert _linhas_visiveis(janela) == []

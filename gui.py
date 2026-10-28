@@ -43,13 +43,17 @@ class CofreApp(ctk.CTk):
         self.f = None
         self.selecionado: str | None = None
         self._senha_visivel = False
-        self._botoes: dict = {}            # linhas reaproveitadas (nome -> botão)
+        self._pool: list = []              # botões reaproveitados (só os que cabem na tela)
+        self._pool_estado: list = []       # (rótulo, selecionado) desenhado em cada botão
+        self._pool_nomes: list = []        # entrada mostrada em cada botão
+        self._alt_linha: int | None = None # altura de uma linha, em pixels
+        self._topo = 0                     # índice da primeira linha visível
+        self._ultima_busca = ""
         self._linhas_visiveis: list | None = None
         self._detalhes_mostrados: str | None = None
         self._busca_debounce = None
         self._cor_padrao_linha = None      # capturada do primeiro botão
         self._hover_padrao_linha = None
-        self._destacado: str | None = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.grid_columnconfigure(0, weight=1)
@@ -115,17 +119,27 @@ class CofreApp(ctk.CTk):
         esq.pack_propagate(False)
 
         ctk.CTkLabel(esq, text="Suas entradas", font=FONTE_TITULO).grid(
-            row=0, column=0, sticky="w", padx=14, pady=(14, 6))
+            row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(14, 6))
         self.entry_busca = ctk.CTkEntry(esq, placeholder_text="🔍 buscar por nome, usuário ou url",
                                         height=34)
-        self.entry_busca.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
+        self.entry_busca.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
         self.entry_busca.bind("<KeyRelease>", lambda _e: self._ao_digitar())
 
-        self.lista = ctk.CTkScrollableFrame(esq, fg_color="transparent")
-        self.lista.grid(row=2, column=0, sticky="nsew", padx=6, pady=(0, 10))
+        # lista virtual: só existem botões para as linhas que cabem na tela;
+        # rolar troca o texto deles em vez de criar um widget por entrada
+        self.lista = ctk.CTkFrame(esq, fg_color="transparent")
+        self.lista.grid(row=2, column=0, sticky="nsew", padx=(6, 0), pady=(0, 10))
+        self.lista.grid_columnconfigure(0, weight=1)
+        self.lista.grid_propagate(False)
+        self.lista.bind("<Configure>", lambda _e: self._ajustar_pool())
+        self.barra = ctk.CTkScrollbar(esq, command=self._rolar_barra)
+        self.barra.grid(row=2, column=1, sticky="ns", padx=(0, 6), pady=(0, 10))
+        self.bind_all("<MouseWheel>", self._rolar_roda, add="+")
+        self.bind_all("<Button-4>", self._rolar_roda, add="+")   # Linux/X11
+        self.bind_all("<Button-5>", self._rolar_roda, add="+")
         self.lbl_total = ctk.CTkLabel(esq, text="0 entrada(s)", font=FONTE_PEQUENA,
                                       text_color="#9aa4b2")
-        self.lbl_total.grid(row=3, column=0, sticky="w", padx=14, pady=(0, 12))
+        self.lbl_total.grid(row=3, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 12))
 
         # coluna direita: detalhes
         dir_ = ctk.CTkFrame(self.main_view, corner_radius=14)
@@ -192,6 +206,9 @@ class CofreApp(ctk.CTk):
         self.vault = None
         self.f = None
         self.selecionado = None
+        self._linhas_visiveis = None
+        self._topo = 0
+        self._desenhar()   # esvazia as linhas: nada do cofre fica nos widgets
         self.detalhes_vazio()
         self.login_view.tkraise()
         self.status("cofre travado")
@@ -245,74 +262,143 @@ class CofreApp(ctk.CTk):
             self.after_cancel(self._busca_debounce)
         self._busca_debounce = self.after(90, self.atualizar_lista)
 
-    def _novo_botao(self, nome: str):
-        e = self.vault["entries"][nome]
-        texto = nome + (f"\n{e['username']}" if e.get("username") else "")
+    # ------------------------------------------------------ lista virtual
+    def _novo_botao(self, slot: int):
         btn = ctk.CTkButton(
-            self.lista, text=texto, anchor="w", height=48, corner_radius=10,
+            self.lista, text="", anchor="w", height=48, corner_radius=10,
             font=FONTE_NORMAL,
-            command=lambda n=nome: self.selecionar(n),
+            command=lambda: self._clicar_linha(slot),
         )
         if self._cor_padrao_linha is None:
             # guarda as cores do tema para restaurar quando sair da seleção
             self._cor_padrao_linha = btn.cget("fg_color")
             self._hover_padrao_linha = btn.cget("hover_color")
+        btn.grid(row=slot, column=0, sticky="ew", padx=4, pady=3)
+        btn.grid_remove()   # só aparece quando tiver uma entrada para mostrar
         return btn
 
-    def _renderizar(self, nomes: list[str]) -> None:
-        """Reaproveita os botões existentes. Se o filtro só encolheu, basta
-        esconder quem saiu (a ordem continua válida); caso contrário re-empacota.
-        Muito mais barato que destruir e recriar widgets."""
-        for n in [n for n in self._botoes if n not in self.vault["entries"]]:
-            self._botoes.pop(n).destroy()
-        antigos = self._linhas_visiveis or []
-        encolheu = (antigos and set(nomes).issubset(set(antigos))
-                    and all(n in self._botoes for n in nomes))
-        if encolheu:
-            for n in antigos:
-                if n not in set(nomes):
-                    self._botoes[n].pack_forget()
+    def _clicar_linha(self, slot: int) -> None:
+        if slot < len(self._pool_nomes) and self._pool_nomes[slot]:
+            self.selecionar(self._pool_nomes[slot])
+
+    def _linhas_inteiras(self) -> int:
+        """Quantas linhas cabem inteiras na área da lista."""
+        if not self._alt_linha:
+            return 1
+        return max(1, self.lista.winfo_height() // self._alt_linha)
+
+    def _ajustar_pool(self) -> None:
+        """Cria/destrói botões para caber exatamente na altura atual da lista."""
+        if not self._pool:
+            self._pool.append(self._novo_botao(0))
+            self._pool_estado.append(None)
+            self._pool_nomes.append(None)
+            # altura do botão (já com a escala de DPI) + pady 3 em cima e embaixo
+            req = self._pool[0].winfo_reqheight()
+            self._alt_linha = max(1, round(req * 54 / 48))
+        precisa = self._linhas_inteiras() + 1   # +1 para a linha cortada no fim
+        while len(self._pool) < precisa:
+            self._pool.append(self._novo_botao(len(self._pool)))
+            self._pool_estado.append(None)
+            self._pool_nomes.append(None)
+        while len(self._pool) > precisa:
+            self._pool.pop().destroy()
+            self._pool_estado.pop()
+            self._pool_nomes.pop()
+        self._desenhar()
+
+    def _rotulo(self, nome: str) -> str:
+        e = self.vault["entries"][nome]
+        return nome + (f"\n{e['username']}" if e.get("username") else "")
+
+    def _desenhar(self) -> None:
+        """Mostra nos botões do pool as entradas a partir de `_topo`. Só mexe
+        no botão cujo texto ou cor mudou — é isso que deixa a rolagem leve."""
+        nomes = self._linhas_visiveis if self.vault else []
+        nomes = nomes or []
+        inteiras = self._linhas_inteiras()
+        self._topo = max(0, min(self._topo, len(nomes) - inteiras))
+        for i, btn in enumerate(self._pool):
+            idx = self._topo + i
+            nome = nomes[idx] if idx < len(nomes) else None
+            self._pool_nomes[i] = nome
+            if nome is None:
+                if self._pool_estado[i] is not None:
+                    btn.grid_remove()
+                    self._pool_estado[i] = None
+                continue
+            estado = (self._rotulo(nome), nome == self.selecionado)
+            if self._pool_estado[i] == estado:
+                continue
+            if self._pool_estado[i] is None:
+                btn.grid()
+            texto, selecionado = estado
+            if selecionado:
+                btn.configure(text=texto, fg_color="#2b7fff", hover_color="#1f5fbf")
+            else:
+                btn.configure(text=texto, fg_color=self._cor_padrao_linha,
+                              hover_color=self._hover_padrao_linha)
+            self._pool_estado[i] = estado
+        if nomes:
+            self.barra.set(self._topo / len(nomes),
+                           min(1.0, (self._topo + inteiras) / len(nomes)))
         else:
-            for n in nomes:
-                if n not in self._botoes:
-                    self._botoes[n] = self._novo_botao(n)
-            for w in self._botoes.values():
-                w.pack_forget()
-            # reordena: Tk empacota na ordem das chamadas
-            for n in nomes:
-                self._botoes[n].pack(fill="x", padx=4, pady=3)
+            self.barra.set(0.0, 1.0)
+
+    def _rolar_para(self, topo: float) -> None:
+        self._topo = int(topo)
+        self._desenhar()
+
+    def _rolar_barra(self, *args) -> None:
+        total = len(self._linhas_visiveis or [])
+        if args[0] == "moveto":
+            self._rolar_para(float(args[1]) * total)
+        elif args[0] == "scroll":
+            passo = int(float(args[1]))
+            if len(args) > 2 and args[2] == "pages":
+                passo *= self._linhas_inteiras()
+            self._rolar_para(self._topo + passo)
+
+    def _rolar_roda(self, evento) -> None:
+        """Roda do mouse em cima da lista (ou de uma linha dela): 3 linhas por clique."""
+        w = self.winfo_containing(evento.x_root, evento.y_root)
+        raiz = str(self.lista)
+        if w is None or not (str(w) == raiz or str(w).startswith(raiz + ".")):
+            return
+        if evento.num == 4 or getattr(evento, "delta", 0) > 0:
+            self._rolar_para(self._topo - 3)
+        elif evento.num == 5 or getattr(evento, "delta", 0) < 0:
+            self._rolar_para(self._topo + 3)
+
+    def _garantir_visivel(self, nome: str) -> None:
+        nomes = self._linhas_visiveis or []
+        if nome not in nomes:
+            return
+        i = nomes.index(nome)
+        inteiras = self._linhas_inteiras()
+        if i < self._topo:
+            self._topo = i
+        elif i >= self._topo + inteiras:
+            self._topo = i - inteiras + 1
+
+    def _renderizar(self, nomes: list[str]) -> None:
+        busca = self.entry_busca.get()
+        if busca != self._ultima_busca:   # nova busca começa do topo
+            self._ultima_busca = busca
+            self._topo = 0
         self._linhas_visiveis = nomes
-        self._destacado = None   # cores podem ter mudado ao recriar linhas
-        self._destacar()
+        self._desenhar()
 
     def _atualizar_texto(self, nome: str) -> None:
         """Mantém o rótulo da linha em dia após uma edição, sem recriar a lista."""
-        w = self._botoes.get(nome)
-        if w is None or nome not in self.vault["entries"]:
-            return
-        e = self.vault["entries"][nome]
-        w.configure(text=nome + (f"\n{e['username']}" if e.get("username") else ""))
-
-    def _aplicar_cor(self, nome: str) -> None:
-        w = self._botoes.get(nome)
-        if w is None:
-            return
-        if nome == self.selecionado:
-            w.configure(fg_color="#2b7fff", hover_color="#1f5fbf")
-        elif self._cor_padrao_linha is not None:
-            w.configure(fg_color=self._cor_padrao_linha,
-                        hover_color=self._hover_padrao_linha)
+        if nome in (self.vault or {}).get("entries", {}):
+            self._desenhar()
 
     def _destacar(self) -> None:
-        """Muda a cor de apenas 2 linhas (a que saiu e a que entrou), não da lista."""
-        if self._destacado == self.selecionado:
-            return
-        anterior, novo = self._destacado, self.selecionado
-        self._destacado = novo
-        if anterior:
-            self._aplicar_cor(anterior)
-        if novo:
-            self._aplicar_cor(novo)
+        """Recolore só os botões cuja seleção mudou (o resto já está certo)."""
+        if self.selecionado:
+            self._garantir_visivel(self.selecionado)
+        self._desenhar()
 
     def atualizar_lista(self) -> None:
         self._busca_debounce = None

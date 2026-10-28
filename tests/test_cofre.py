@@ -347,3 +347,17 @@ def test_get_copy_comportamento(vault: Path):
     else:
         assert p.returncode == 1
         assert "área de transferência" in p.stderr
+
+
+def test_pasta_padrao_portatil_ao_lado_do_exe(monkeypatch, tmp_path: Path):
+    mod = load_main()
+    exe = tmp_path / "pendrive" / "CofreSenhas.exe"
+    monkeypatch.setattr(mod.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(mod.sys, "executable", str(exe))
+    assert mod._pasta_padrao() == exe.resolve().parent / "cofre_dados"
+
+
+def test_pasta_padrao_sem_empacotar_fica_na_home(monkeypatch):
+    mod = load_main()
+    monkeypatch.delattr(mod.sys, "frozen", raising=False)
+    assert mod._pasta_padrao() == Path.home() / ".cofre_senhas"

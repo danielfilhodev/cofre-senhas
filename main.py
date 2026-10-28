@@ -36,7 +36,14 @@ from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
-VAULT_DIR = Path(os.environ.get("COFRE_DIR", Path.home() / ".cofre_senhas"))
+def _pasta_padrao() -> Path:
+    """Executável empacotado (pendrive): cofre ao lado do .exe; senão, na home."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "cofre_dados"
+    return Path.home() / ".cofre_senhas"
+
+
+VAULT_DIR = Path(os.environ.get("COFRE_DIR", _pasta_padrao()))
 VAULT_PATH = VAULT_DIR / "vault.json"
 KDF_ITERATIONS = 600_000
 _verifier = b"cofre-senhas-ok"  # valor conhecido p/ detectar senha mestra errada

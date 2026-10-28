@@ -338,6 +338,36 @@ traz a interface em todos os sistemas (`python gui.py`).
 O terminal continua sendo dono das funções de automação (`get --raw`,
 `import --dry-run`, uso em scripts) — a janela é para o dia a dia.
 
+### Versão portátil (pendrive, sem instalar nada)
+
+Dá para gerar um **único `CofreSenhas.exe`** que roda em qualquer Windows sem
+Python, sem uv e sem terminal: é só dar dois cliques.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1
+```
+
+O arquivo sai em `dist\CofreSenhas.exe`. Copie para o pendrive. No primeiro
+uso ele cria a pasta **`cofre_dados`** ao lado do `.exe`, e é ali que o cofre
+fica. Assim o programa e as senhas viajam juntos:
+
+```
+E:\
+├── CofreSenhas.exe
+└── cofre_dados\
+    └── vault.json
+```
+
+- Para levar um cofre que você já tem, copie o `vault.json` de
+  `C:\Users\voce\.cofre_senhas\` para `cofre_dados\` no pendrive.
+- O `.exe` só roda no sistema em que foi gerado (gere no Windows para Windows,
+  no macOS para macOS etc.).
+- Perder o pendrive não entrega as senhas a ninguém: sem a senha mestra o
+  `vault.json` não abre. Ainda assim, **faça backup** dele em outro lugar.
+- Alguns antivírus desconfiam de executáveis gerados pelo PyInstaller. Se o
+  Windows mostrar o aviso "O Windows protegeu o computador", clique em
+  *Mais informações → Executar assim mesmo*.
+
 ---
 
 ## 6. Importar senhas do navegador
@@ -439,6 +469,7 @@ com `add` — de site em site.
 
 - Em Linux/macOS a pasta tem permissão `700` e o arquivo `600` (só o seu usuário lê).
 - O arquivo é **ilegível sem a senha mestra**: é só texto embaralhado.
+- Na [versão portátil](#versão-portátil-pendrive-sem-instalar-nada) o cofre fica em `cofre_dados` ao lado do `.exe`.
 - O caminho pode ser mudado definindo a variável de ambiente `COFRE_DIR`.
 
 **Backup (muito importante):**

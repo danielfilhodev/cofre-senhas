@@ -273,7 +273,9 @@ def test_menu_nova_entrada(app, monkeypatch):
     textos = [b.cget("text").split("\n")[0] for b in janela._opcoes_menu_novo]
     assert any("manualmente" in t for t in textos)
     assert any("senha forte" in t for t in textos)
-    assert any("Importar" in t for t in textos)
+    assert not any("Importar" in t for t in textos)   # importar tem botão próprio
+    assert "Importar" in janela.btn_importar.cget("text")
+    assert janela.btn_importar.winfo_ismapped()
 
     # escolher uma opção fecha o menu e chama a ação
     chamadas = []

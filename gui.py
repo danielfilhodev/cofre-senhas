@@ -185,12 +185,15 @@ class CofreApp(ctk.CTk):
         topo.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(topo, text="🔐 Cofre de Senhas", font=FONTE_TITULO).grid(
             row=0, column=0, sticky="w")
+        self.btn_importar = ctk.CTkButton(topo, text="📥  Importar CSV…", width=170, height=34,
+                                          command=self.importar_csv)
+        self.btn_importar.grid(row=0, column=1, sticky="e", padx=(0, 8))
         self.btn_novo = ctk.CTkButton(topo, text="＋ Nova entrada  ▾", width=160, height=34,
                                       fg_color="#2f9e6e", hover_color="#26815b",
                                       command=self.alternar_menu_novo)
-        self.btn_novo.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.btn_novo.grid(row=0, column=2, sticky="e", padx=(0, 8))
         ctk.CTkButton(topo, text="Travar", width=90, height=34, fg_color="#444b57",
-                      hover_color="#343a44", command=self.travar).grid(row=0, column=2, sticky="e")
+                      hover_color="#343a44", command=self.travar).grid(row=0, column=3, sticky="e")
 
         # coluna esquerda: busca + lista
         esq = ctk.CTkFrame(self.main_view, corner_radius=14, width=320)
@@ -257,8 +260,6 @@ class CofreApp(ctk.CTk):
         for i, (texto, dica, cmd) in enumerate([
             ("✏  Preencher manualmente", "você digita usuário e senha", self.adicionar),
             ("🎲  Com senha forte gerada", "o cofre cria uma senha de 20 caracteres", self.gerar),
-            ("📥  Importar do navegador…", "CSV exportado do Chrome, Edge, Firefox…",
-             self.importar_csv),
         ]):
             btn = ctk.CTkButton(
                 self.menu_novo, text=f"{texto}\n{dica}", anchor="w", width=290, height=50,

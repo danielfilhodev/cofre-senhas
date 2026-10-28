@@ -319,7 +319,8 @@ O que dá para fazer na janela:
 | **Buscar** | filtra por nome, usuário ou url enquanto você digita |
 | **Lista à esquerda** | clique numa entrada para ver os detalhes |
 | **Mostrar / Copiar** | revela a senha ou cola na área de transferência (limpa em 30 s) |
-| **＋ Nova entrada ▾** | menu no topo: preencher manualmente, criar com senha forte gerada ou importar CSV do navegador |
+| **＋ Nova entrada ▾** | menu no topo: preencher manualmente ou criar com senha forte gerada |
+| **📥 Importar CSV…** | botão próprio no topo: o mesmo import do terminal, com escolha de arquivo e confirmação |
 | **Editar / Apagar** | aparecem embaixo dos detalhes quando uma entrada está selecionada |
 | **Travar** | volta para a tela de senha na hora |
 
